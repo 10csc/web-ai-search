@@ -1,0 +1,15 @@
+﻿{
+  "version": 6,
+  "session_mode": "fixed",
+  "_session_mode_help": "fixed=使用sessions中的项目链接; auto=Agent自行管理对话",
+  "sessions": {},
+  "_sessions_help": "项目名→固定链接映射，如 {\"my_project\": \"https://chat.deepseek.com/a/chat/s/xxx\"}",
+  "current_project": "",
+  "deepseek_api": "http://localhost:3688/v1",
+  "cdp_port": 9222,
+  "project_name": "web_ai_search",
+  "local_env": {
+    "initialized": false,
+    "_instructions": "运行 python setup.py 自动填充此字段。"
+  }
+}
