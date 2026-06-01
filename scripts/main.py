@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """web-ai-search 入口 —— send / extract / auto 三模式"""
 import argparse, time, sys, os, json, importlib, importlib.util
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -6,19 +6,10 @@ if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
 
-from common import load_config, ensure_browser, detect_platform, safe_page_text, get_project_name
+from common import (load_config, ensure_browser, ensure_page, detect_platform, get_or_create_project,
+                    safe_page_text, get_project_name, _save_session, get_session_url)
 from generator import script_exists, generate_interaction_script, get_platform_script_path
 from logger import log_entry
-
-
-def _save_session(project, url):
-    """将项目→链接写入 config.json 的 sessions"""
-    config_path = os.path.join(os.path.dirname(SCRIPT_DIR), "config.json")
-    with open(config_path, 'r', encoding='utf-8-sig') as f:
-        c = json.load(f)
-    c.setdefault('sessions', {})[project] = url
-    with open(config_path, 'w', encoding='utf-8') as f:
-        json.dump(c, f, ensure_ascii=False, indent=2)
 
 
 def load_platform_module(platform):
@@ -31,14 +22,13 @@ def load_platform_module(platform):
 
 def _ensure_script_generated(platform, url):
     try: from playwright.sync_api import sync_playwright
-    except ImportError: raise RuntimeError("未安装 playwright")
+    except ImportError: raise RuntimeError("未安装 playwright，请运行: python setup.py")
     config = load_config()
     with sync_playwright() as p:
-        browser, page = ensure_browser(p, config.get("cdp_port", 9222))
-        page.bring_to_front(); time.sleep(1)
-        from common import get_session_url
-        target_url = get_session_url(project=config.get("current_project",""), default_url=url)
-        page.goto(target_url, timeout=30000, wait_until="domcontentloaded"); time.sleep(5)
+        browser, _page = ensure_browser(p, config.get("cdp_port", 9222))
+        project = get_or_create_project()
+        target_url = get_session_url(project=project, default_url=url)
+        page = ensure_page(browser, target_url); time.sleep(1)
         generate_interaction_script(page, platform, page.url)
 
 
@@ -52,30 +42,26 @@ def run_send(prompt, topic, url, force_regenerate=False):
     plat = load_platform_module(platform)
     log_entry(get_project_name(), "input", f"TOPIC:{topic}")
     try: from playwright.sync_api import sync_playwright
-    except ImportError: return "ERROR: 未安装 playwright"
+    except ImportError: return "ERROR: 未安装 playwright，请运行: python setup.py"
     config = load_config()
-    # 新项目无绑定链接时自动标记
-    project = config.get("current_project", "")
+    project = get_or_create_project()
     sessions = config.get("sessions", {})
     is_new = (config.get("session_mode", "fixed") == "fixed" and project and project not in sessions)
 
     with sync_playwright() as p:
-        browser, page = ensure_browser(p, config.get("cdp_port", 9222))
-        page.bring_to_front(); time.sleep(1)
-        from common import get_session_url
+        browser, _page = ensure_browser(p, config.get("cdp_port", 9222))
         target_url = get_session_url(project=project, default_url=url)
-        page.goto(target_url, timeout=30000, wait_until="domcontentloaded"); time.sleep(5)
+        page = ensure_page(browser, target_url)
         plat.fill_prompt(page, prompt)
         plat.dismiss_blockers(page)
         plat.submit(page)
         remaining = page.evaluate("() => {let e=document.querySelector('[contenteditable=true],textarea');return e?(e.value||e.innerText||'').length:-1}")
 
-        # 新项目：发送成功后自动绑定对话链接
-        if is_new and remaining is not None and remaining <= 2:
+        if config.get("session_mode", "fixed") == "fixed" and remaining is not None and remaining <= 2:
             current_url = page.url
-            if current_url != target_url and "chat.deepseek.com" in current_url:
+            if current_url != target_url:
                 _save_session(project, current_url)
-                print(f"[发送] 已绑定: {project} -> {current_url}")
+                print("[发送] 已绑定: {} -> {}".format(project, current_url[:80]))
 
         if remaining is not None and remaining <= 2:
             print("[发送] 成功 (残留{0}字符)".format(remaining)); return "OK"
@@ -89,11 +75,13 @@ def run_extract(prompt, topic, url):
     platform = detect_platform(url)
     print(f"[提取] 平台: {platform}")
     try: from playwright.sync_api import sync_playwright
-    except ImportError: return "ERROR: 未安装 playwright"
+    except ImportError: return "ERROR: 未安装 playwright，请运行: python setup.py"
     config = load_config()
     with sync_playwright() as p:
-        browser, page = ensure_browser(p, config.get("cdp_port", 9222))
-        page.bring_to_front(); time.sleep(1)
+        browser, _page = ensure_browser(p, config.get("cdp_port", 9222))
+        project = get_or_create_project()
+        target_url = get_session_url(project=project, default_url=url)
+        page = ensure_page(browser, target_url); time.sleep(1)
         raw = safe_page_text(page)
         if not raw: return "ERROR: 页面无内容"
         print(f"[提取] 页面: {len(raw)} 字符")
@@ -113,18 +101,19 @@ def run_extract(prompt, topic, url):
 # ====== auto: send + detect + extract ======
 
 def run_auto(prompt, topic, url, force_regenerate=False, max_wait=300):
-    # step 1: send
     result = run_send(prompt, topic, url, force_regenerate)
     if not result or "ERROR" in str(result):
         return f"发送失败: {result}"
     print("[自动] 发送完成，内容检测中...")
     
     try: from playwright.sync_api import sync_playwright
-    except ImportError: return "ERROR: 未安装 playwright"
+    except ImportError: return "ERROR: 未安装 playwright，请运行: python setup.py"
     config = load_config()
     with sync_playwright() as p:
-        browser, page = ensure_browser(p, config.get("cdp_port", 9222))
-        page.bring_to_front()
+        browser, _page = ensure_browser(p, config.get("cdp_port", 9222))
+        project = get_or_create_project()
+        target_url = get_session_url(project=project, default_url=url)
+        page = ensure_page(browser, target_url)
         from extractor import extract_content, is_content_complete
         deadline = time.time() + max_wait
         last_len = 0; stable_count = 0; start_ts = time.time()
@@ -132,7 +121,6 @@ def run_auto(prompt, topic, url, force_regenerate=False, max_wait=300):
             time.sleep(2)
             raw = safe_page_text(page)
             if not raw: continue
-            # 中间状态输出（标记数/页面大小），让用户知道在轮询
             marker_check = f"[搜索主题：{topic}]"
             marker_count = raw.count(marker_check)
             elapsed = int(time.time() - start_ts)
@@ -155,7 +143,6 @@ def run_auto(prompt, topic, url, force_regenerate=False, max_wait=300):
                 last_len = len(content)
                 elapsed = int(time.time() - start_ts)
                 print(f"[自动] 结构完整 ({len(content)}字符, {elapsed}s, 稳定{stable_count}/3)")
-        # timeout fallback
         raw = safe_page_text(page)
         content = extract_content(raw, prompt, topic)
         if content and len(content) > 300:

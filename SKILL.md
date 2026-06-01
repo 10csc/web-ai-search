@@ -2,6 +2,24 @@
 
 > 通过 CDP 协议操控浏览器里的 AI 对话平台，自动发送搜索 prompt 并提取结构化回复。
 
+
+## ⛔ 执行失败速查（Agent 必须识别，禁止反复重试）
+
+**前置检查**：首次使用或报 ImportError/未初始化时，Agent 必须先确认 python setup.py 已执行，再确认 config.json 配置（local_env.initialized=true，current_project 已设置），然后根据下方 CDP 章节引导用户完成浏览器配置。三项全部就绪后才能开始搜索。
+
+| 错误信息 | 原因 | 处理 |
+|---------|------|------|
+| `PermissionError: ... data/_prompt.txt` | Agent 沙箱拦截文件写入 | 添加 prefix_rule 白名单（见沙箱兼容性章节） |
+| `ECONNREFUSED 127.0.0.1:9222` | 沙箱网络隔离 或 浏览器未开调试端口 | 先确认 CDP 端口可用（`curl http://127.0.0.1:9222/json/version`），不可用则告知用户启动浏览器（见 CDP 前置章节） |
+| `ImportError: No module named 'playwright'` | 依赖未安装 | 运行 `python setup.py` |
+| `RuntimeError: 未检测到 CDP 浏览器` | 浏览器未启动或未开调试端口 | 告知用户配置方案（见 CDP 前置章节），不自动执行系统变更 |
+| `发送失败` / `提取失败` / `ERROR: 超时` | 网络波动或 AI 回复慢 | 可重试 1-2 次，仍失败则告知用户检查网络和 AI 平台状态 |
+| 首次 `run_auto` 合并 send+extract | 标记对可能因渲染延迟未出现 | **严禁**首次使用合并执行，必须先 send → 等用户确认 → extract |
+
+**Agent 铁律**：任何错误最多重试 2 次，第 3 次仍失败必须告知用户具体原因和解决方案，不得无限循环。
+
+---
+
 ## 能力概述
 
 本 Skill 提供三种搜索模式 × 三级搜索深度：
@@ -22,6 +40,7 @@
 
 ---
 
+
 ## ⚠️ 核心约束（不可违反）
 
 1. **首次使用某平台禁止 `auto` 模式**：必须先 `send` → 等用户确认 → `extract`。**绝对禁止在第一条命令里合并 send+extract**（第一次发送时标记可能因网络/渲染延迟而未出现在页面中，合并执行会导致提取永远失败）
@@ -29,70 +48,69 @@
 3. **禁止复用 prompt**：每次搜索必须重新生成，topic 须含 `@xxxx` 哈希
 4. **CDP 端口规则**：LISTENING → 直接复用，不杀进程。空闲/TIME_WAIT 且浏览器在运行 → 可重启带调试参数（告知用户）。端口被占用 → 换端口。无论如何不无脑杀进程
 
----
 
-## 🛡️ 升级铁律（不可违反）
-
-> **任何时候升级/更新本 Skill，以下文件/目录绝对不可覆盖：**
-
-| 文件/目录 | 原因 |
-|----------|------|
-| `config.json` | 含用户环境自举数据（Python路径、浏览器路径、CDP端口等） |
-| `data/` | 含搜索历史和结果 |
-| `venv/` | 含用户已安装的 Python 依赖 |
-| `scripts/platforms/` | 含已定型的平台交互脚本 |
-| `scripts/profiles/` | 含 DOM 分析快照 |
-
-> **更新只能修改内容使其适配新版本，绝不能删除或重置这些目录。**
-
-**可覆盖**：`scripts/*.py`、`SKILL.md`、`LEARNINGS.md`、`README.md`、`setup.py`、`references/`
 
 ---
 
-## 首次配置提醒
 
-首次加载本 Skill 时，**主动询问用户以下配置**（不等用户自己提）：
+## Agent 沙箱兼容性
 
-1. **对话模式**：选 `fixed`（固定项目链接，默认推荐）还是 `auto`（自动管理对话）？
-   - `fixed`：每个项目绑定一个固定 DeepSeek 对话链接，搜索时刷新该对话页面
-   - `auto`：Agent 可自行刷新页面、新建对话
-2. **当前项目名**（fixed 模式）：用于区分不同项目，如 `"my_app"`。新项目首次搜索自动绑定链接。
-3. **搜索平台 URL**：默认 `https://chat.deepseek.com/`，是否更换？
+本 Skill 通过浏览器 CDP 协议操控 AI 对话平台，与 Agent 沙箱存在以下冲突：
 
-写入 `config.json` 对应字段后不再重复询问。
+### 冲突点
+| 操作 | 沙箱行为 | 原因 |
+|------|---------|------|
+| 写 data/ 目录（prompt 文件、中间结果） | 被拦截 | data/ 不在沙箱可写根目录 |
+| CDP 连接 localhost:9222 | 被拦截 | 沙箱网络隔离 |
+| Playwright 控制浏览器进程 | 被拦截 | 子进程创建 + 网络访问 |
 
----
+### 原因
+本 Skill 的本质是用户态浏览器代理——使用用户的浏览器、登录态、IP 与 AI 对话平台交互，不是无状态 API 调用。沙箱的设计目标是隔离，而本 Skill 的设计目标是代理用户行为，两者逻辑互斥。
 
-## 前置：Python 路径
-
-读 `config.json` 的 `local_env.python_venv`，有值直接用。无值则 fallback 到 `local_env.python.path`，都没有则：
-
-```bash
-python3 --version 2>/dev/null || python --version 2>/dev/null || py --version 2>/dev/null
-<找到的Python> -m pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple  # 中国大陆用户
-<找到的Python> setup.py
+### 解决方案：prefix_rule 白名单
+在 Agent（如 Codex CLI）中为本 Skill 的 venv Python 添加白名单：
 ```
+["{SKILL_DIR}/venv/Scripts/python.exe"]
+```
+该 venv 是 Skill 专属隔离环境，仅用于执行本 Skill 脚本。添加后所有 Skill 命令（生成 prompt、send、extract、run_auto）自动放行。
 
-> **Python 版本兼容**：本 Skill 要求 Python >= 3.8（playwright 要求）。`setup.py` 会自动检测并提示。用户系统 Python 版本可能与开发者不同，`setup.py` 会自动创建独立 venv 避免污染系统环境。
+用户安装后执行的具体 prefix_rule 由 config.json 的 local_env.python_venv 决定。Agent 首次调用时若因沙箱被拦截，应提示用户添加该路径为白名单。
+
+### 不推荐替代方案
+- MCP 化：CDP 连接依赖实时浏览器状态（登录态、页面 DOM），MCP server 进程管理增加浏览器崩溃恢复、CDP 重连等故障点。当前阶段 MCP 化的唯一收益是工具链集成，性价比低。
+- 移到沙箱可写目录：只解决文件写入问题，无法解决 CDP 网络隔离和 Playwright 子进程限制。
+
+---
+
 
 ## 前置：CDP 端口
 
-```bash
-<PYTHON> -c "
-from scripts.common import load_config, ensure_browser
-from playwright.sync_api import sync_playwright
-cfg = load_config()
-try:
-    with sync_playwright() as p:
-        browser, page = ensure_browser(p, cfg.get('cdp_port', 9222))
-        print(f'CDP OK')
-except Exception as e:
-    print(f'CDP 不可用: {e}')"
-```
+本 Skill 需要浏览器开启远程调试端口（默认 9222，自动扫描 9222-9225）。
 
-不可用则引导用户启动浏览器调试模式。
+Skill 内置以下逻辑（由 common.py 的 ensure_browser 自动执行，Agent 无需手动干预）：
+1. 自动扫描 9222-9225 端口寻找可用 CDP 连接
+2. 若无可用端口，从 config.json 读取浏览器路径尝试自动启动
+3. 若自动启动失败（如浏览器已在运行但未开 CDP），输出具体操作指引
+
+用户侧配置（Agent 应告知用户以下方案，由用户自行选择，不自动执行）：
+
+方案 A（推荐，CDP 按需暴露）：关闭浏览器后台运行
+  Edge 设置 → edge://settings/system → 关闭"在 Microsoft Edge 关闭后继续运行后台扩展和应用"
+  效果：关闭所有 Edge 窗口后进程自动清理。Skill 的 _launch_browser 可干净启动带 CDP 的新实例，
+  搜索完成后用户正常关闭窗口即可，CDP 仅在搜索期间暴露。
+
+方案 B（推荐，CDP 常驻）：浏览器快捷方式加 --remote-debugging-port=9222
+  效果：Edge 启动即带 CDP，Skill 随时直连，无需关窗口。代价：CDP 端口始终开放。
+
+方案 C：每次搜索前手动启动带调试端口的浏览器
+
+方案 D：注册表/启动项配置（需管理员权限，不推荐）
+
+风险提示：CDP 仅监听 127.0.0.1，外网不可达，但本机任意进程均可操控浏览器。
+方案 A 风险最低（CDP 按需暴露），方案 B 便利性最高。个人开发机均风险可控。
 
 ---
+
 
 ## 搜索流程
 
@@ -191,6 +209,7 @@ print('OK' if result and 'ERROR' not in str(result) else f'FAIL: {result}')"
 
 ---
 
+
 ## 对话管理
 
 `config.json` 的 `session_mode` 控制对话切换行为：
@@ -210,6 +229,7 @@ print('OK' if result and 'ERROR' not in str(result) else f'FAIL: {result}')"
 
 **切换对话**：用户说"换个对话"/"新对话" → `fixed` 模式下更新 `sessions`，`auto` 模式下新建对话。
 
+
 ## 快速参考
 
 | 平台 | URL | 模式 | TYPE |
@@ -225,6 +245,61 @@ print('OK' if result and 'ERROR' not in str(result) else f'FAIL: {result}')"
 
 ---
 
+
+---
+
+## 📋 以下为首次配置内容（配置完成后 Agent 可跳过此部分）
+
+> ⚠️ 以下章节仅在首次安装或升级时需要。日常使用中 Agent 无需加载这些内容，可直接跳至搜索流程。
+
+## 🛡️ 升级铁律（不可违反）
+
+> **任何时候升级/更新本 Skill，以下文件/目录绝对不可覆盖：**
+
+| 文件/目录 | 原因 |
+|----------|------|
+| `config.json` | 含用户环境自举数据（Python路径、浏览器路径、CDP端口等） |
+| `data/` | 含搜索历史和结果 |
+| `venv/` | 含用户已安装的 Python 依赖 |
+| `scripts/platforms/` | 含已定型的平台交互脚本 |
+| `scripts/profiles/` | 含 DOM 分析快照 |
+
+> **更新只能修改内容使其适配新版本，绝不能删除或重置这些目录。**
+
+**可覆盖**：`scripts/*.py`、`SKILL.md`、`LEARNINGS.md`、`README.md`、`setup.py`、`references/`
+
+---
+
+
+## 首次配置提醒
+
+首次加载本 Skill 时，**主动询问用户以下配置**（不等用户自己提）：
+
+1. **对话模式**：选 `fixed`（固定项目链接，默认推荐）还是 `auto`（自动管理对话）？
+   - `fixed`：每个项目绑定一个固定 DeepSeek 对话链接，搜索时刷新该对话页面
+   - `auto`：Agent 可自行刷新页面、新建对话
+2. **当前项目名**（fixed 模式）：用于区分不同项目，如 `"my_app"`。新项目首次搜索自动绑定链接。
+   - **重要**：若不设置，项目名回退为当前工作目录名（`os.getcwd()` 的 basename），导致换目录后视为新项目、创建新对话链接。Agent 必须在首次搜索前确认项目名已设置。若 current_project 为空，Skill 内置的 get_or_create_project() 会自动从工作目录推断并持久化到 config.json，后续不再依赖目录。
+3. **搜索平台 URL**：默认 `https://chat.deepseek.com/`，是否更换？
+
+写入 `config.json` 对应字段后不再重复询问。
+
+---
+
+
+## 前置：Python 路径
+
+读 `config.json` 的 `local_env.python_venv`，有值直接用。无值则 fallback 到 `local_env.python.path`，都没有则：
+
+```bash
+python3 --version 2>/dev/null || python --version 2>/dev/null || py --version 2>/dev/null
+<找到的Python> -m pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple  # 中国大陆用户
+<找到的Python> setup.py
+```
+
+> **Python 版本兼容**：本 Skill 要求 Python >= 3.8（playwright 要求）。`setup.py` 会自动检测并提示。用户系统 Python 版本可能与开发者不同，`setup.py` 会自动创建独立 venv 避免污染系统环境。
+
+
 ## 版本升级
 
 升级时不覆盖用户数据。升级时**只能修改代码文件内容使其适配新版本**，不能删除或重置用户数据目录。
@@ -237,3 +312,21 @@ print('OK' if result and 'ERROR' not in str(result) else f'FAIL: {result}')"
 - False → 运行 `<PYTHON> setup.py`
 
 详细规则见 UPGRADE.md。
+
+---
+
+
+## 多 Agent 共享（推荐）
+
+如果同时使用多个 AI 编码 Agent（如 Codex CLI、Claude Code 等），建议只保留一份 Skill 实体，其他 Agent 目录通过目录联接（Junction）指向它：
+
+```powershell
+# 假设主副本在 .agents/skills/web-ai-search/
+cmd /c mklink /J "C:\Users\<用户名>\.codex\skills\web-ai-search" "C:\Users\<用户名>\.agents\skills\web-ai-search"
+cmd /c mklink /J "C:\Users\<用户名>\.claude\skills\web-ai-search" "C:\Users\<用户名>\.agents\skills\web-ai-search"
+```
+
+优点：修改一处全部 Agent 生效，搜索历史、配置、venv 共享，不会出现版本分裂。
+
+每个 Agent 仍需为其 venv Python 添加 prefix_rule 白名单（详见 SKILL.md Agent 沙箱兼容性章节），路径由各 Agent 的沙箱配置决定。
+
