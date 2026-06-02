@@ -141,25 +141,67 @@ def _launch_browser(port=None):
     if found:
         return found
     return use_port
+def _is_edge_running():
+    """检查 Edge 进程是否在运行（不限 CDP 模式）"""
+    import subprocess
+    try:
+        r = subprocess.run(["tasklist", "/fi", "IMAGENAME eq msedge.exe", "/fo", "csv"],
+                          capture_output=True, text=True, timeout=5)
+        return r.stdout.count("msedge.exe") > 1
+    except Exception:
+        return False
+
+
+def _kill_edge():
+    """强制关闭所有 Edge 进程"""
+    import subprocess
+    try:
+        subprocess.run(["taskkill", "/f", "/im", "msedge.exe"],
+                      capture_output=True, timeout=10)
+        time.sleep(2)
+    except Exception:
+        pass
+
+
 def ensure_browser(p, cdp_port=None):
     """连接 CDP 浏览器。
-    优先扫描已有端口 → 尝试自动启动 → 给出可操作的错误提示。
+    流程：扫描端口 -> Edge无CDP则杀进程重启 -> 重试3次 -> 报错。
+    信任本地单用户环境，自动处理 Edge 崩溃和冲突。
     返回 (browser, page)。
     """
+    config = load_config()
+    browser_info = config.get("local_env", {}).get("browser", {})
+    browser_name = os.path.basename(browser_info.get("path", "浏览器"))
+
     # 1. 扫描已有 CDP 端口
     port = find_cdp_port()
+
+    # 2. 无 CDP 但 Edge 在运行 -> 可能开了普通 Edge 锁住了 CDP 自启
+    if not port and _is_edge_running():
+        print("[*] Edge 在运行但无 CDP，正在重启...")
+        _kill_edge()
+        time.sleep(2)
+
+    # 3. 尝试启动 + 重试（最多3次，每次等3秒）
     if not port:
-        # 2. 尝试自动启动浏览器
-        port = _launch_browser(cdp_port or DEFAULT_CDP_PORT)
+        for attempt in range(3):
+            print("[*] 启动浏览器 CDP 模式 (尝试 {}/3)...".format(attempt + 1))
+            port = _launch_browser(cdp_port or DEFAULT_CDP_PORT)
+            if port:
+                break
+            time.sleep(3)
+            port = find_cdp_port()
+            if port:
+                break
+
+    # 4. 仍未找到 -> 报错
     if not port:
-        config = load_config()
-        browser_info = config.get("local_env", {}).get("browser", {})
-        browser_name = os.path.basename(browser_info.get("path", "浏览器"))
         raise RuntimeError(
-            "未检测到 CDP 浏览器。请手动启动浏览器并开启远程调试：\n"
-            "  {} --remote-debugging-port=9222\n"
-            "启动后重新执行即可。".format(browser_name)
+            "未检测到 CDP 浏览器，自动启动也失败。\n"
+            "请手动执行：{} --remote-debugging-port=9222\n"
+            "然后重试。".format(browser_name)
         )
+
     cdp_url = "http://127.0.0.1:{}".format(port)
     print("[*] 连接浏览器 (CDP: {})...".format(port))
     try:
@@ -168,14 +210,12 @@ def ensure_browser(p, cdp_port=None):
         raise RuntimeError(
             "CDP 连接失败 (端口 {})：{}\n"
             "请确认浏览器已启动并开启远程调试：\n"
-            "  浏览器路径 --remote-debugging-port={}".format(port, e, port)
+            "  {} --remote-debugging-port={}".format(port, e, browser_name, port)
         )
     contexts = browser.contexts
     if not contexts or not contexts[0].pages:
         raise RuntimeError("无可用的浏览器标签页，请打开至少一个标签页后重试")
     return browser, contexts[0].pages[-1]
-
-
 def ensure_page(browser, url, new_tab=False):
     """在当前 context 中查找或创建目标 URL 的页面。
     new_tab=True 时始终创建新标签页，不干扰用户已有标签。
