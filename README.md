@@ -57,17 +57,21 @@ python setup.py
 
 > 中国大陆用户：`setup.py` 会自动尝试清华/阿里/中科大镜像源，无需手动配置。
 
-3. 启动浏览器调试端口：
+3. 注册浏览器 CDP 开机自启（信任本地单用户环境）：
 
 ```powershell
-# Windows (Edge)
-Start-Process "msedge" -ArgumentList "--remote-debugging-port=9222"
+# Windows (Edge) — 一次性配置，之后每次登录自动启动 CDP
+$path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+Set-ItemProperty -Path $path -Name "EdgeCDP" -Value '"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9222'
 ```
 
 ```bash
-# macOS (Chrome)
+# macOS (Chrome) — 添加到登录项或使用 launchctl
+# 每次搜索前手动执行，或设为开机自启：
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 &
 ```
+
+> **设计说明**：CDP 仅监听 127.0.0.1，外部网络不可达。信任本地单用户环境，Agent 内置自动崩溃恢复（common.py 的 ensure_browser）。正常情况零手动操作。
 
 ### 触发 Skill
 
