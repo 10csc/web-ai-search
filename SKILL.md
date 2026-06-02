@@ -87,7 +87,7 @@
 
 本 Skill 需要浏览器开启远程调试端口（默认 9222，自动扫描 9222-9225）。
 
-**设计原则：Agent 不自动启动浏览器。不越权，不杀进程。两个方案由用户自选。**
+**设计原则：Agent 不自动启动浏览器，不越权，不杀进程。两个方案由用户自选。**
 
 ### Agent 行为
 
@@ -96,21 +96,22 @@
 - **不通** → 输出：
 
 > CDP 不可用。请二选一：
-> **A（每次手动，更安全）**：关闭 Edge，执行 `msedge --remote-debugging-port=9222`，然后告诉我继续。
-> **B（开机自启，更方便）**：执行以下一次性配置后重启：
-> ```
-> $path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
-> Set-ItemProperty -Path $path -Name "EdgeCDP" -Value '"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9222'
-> ```
+> **A（每次手动，更安全）**：执行 `msedge --remote-debugging-port=9222`，然后告诉我继续。
+> **B（一劳永逸）**：右键 Edge 快捷方式 → 属性 → 目标末尾加 ` --remote-debugging-port=9222`（注意前面有空格）。之后每次打开 Edge 都自带 CDP。
 
 ### 方案对比
 
-| | A：手动 | B：开机自启 |
+| | A：手动 | B：修改快捷方式 |
 |------|------|------|
 | 自动化 | 每次搜索前手动一行命令 | 零操作 |
-| 安全 | CDP 仅搜索窗口期暴露 | CDP 常驻 |
-| 配置 | 零 | 一次 PowerShell |
+| 安全 | CDP 仅搜索窗口期暴露 | CDP 随 Edge 常驻 |
+| 配置 | 零 | 改一次快捷方式 |
+| 额外进程 | 无 | 无（同一实例，不带 CDP 不额外开销） |
 | 推荐 | 安全性优先 | 便利性优先 |
+
+### 安全分析
+
+CDP 仅监听 127.0.0.1，外部网络不可达。网页 fetch 受同源策略限制无法读取响应。信任本地单用户环境，两种方案风险均可控。
 
 ### 安全分析
 
