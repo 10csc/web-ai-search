@@ -141,65 +141,24 @@ def _launch_browser(port=None):
     if found:
         return found
     return use_port
-def _is_edge_running():
-    """检查 Edge 进程是否在运行（不限 CDP 模式）"""
-    import subprocess
-    try:
-        r = subprocess.run(["tasklist", "/fi", "IMAGENAME eq msedge.exe", "/fo", "csv"],
-                          capture_output=True, text=True, timeout=5)
-        return r.stdout.count("msedge.exe") > 1
-    except Exception:
-        return False
-
-
-def _kill_edge():
-    """强制关闭所有 Edge 进程"""
-    import subprocess
-    try:
-        subprocess.run(["taskkill", "/f", "/im", "msedge.exe"],
-                      capture_output=True, timeout=10)
-        time.sleep(2)
-    except Exception:
-        pass
-
-
 def ensure_browser(p, cdp_port=None):
     """连接 CDP 浏览器。
-    流程：扫描端口 -> Edge无CDP则杀进程重启 -> 重试3次 -> 报错。
-    信任本地单用户环境，自动处理 Edge 崩溃和冲突。
+    扫描 CDP 端口。不通则提示用户手动启动浏览器。
     返回 (browser, page)。
     """
     config = load_config()
     browser_info = config.get("local_env", {}).get("browser", {})
-    browser_name = os.path.basename(browser_info.get("path", "浏览器"))
+    browser_name = os.path.basename(browser_info.get("path", "msedge.exe"))
 
-    # 1. 扫描已有 CDP 端口
     port = find_cdp_port()
-
-    # 2. 无 CDP 但 Edge 在运行 -> 可能开了普通 Edge 锁住了 CDP 自启
-    if not port and _is_edge_running():
-        print("[*] Edge 在运行但无 CDP，正在重启...")
-        _kill_edge()
-        time.sleep(2)
-
-    # 3. 尝试启动 + 重试（最多3次，每次等3秒）
-    if not port:
-        for attempt in range(3):
-            print("[*] 启动浏览器 CDP 模式 (尝试 {}/3)...".format(attempt + 1))
-            port = _launch_browser(cdp_port or DEFAULT_CDP_PORT)
-            if port:
-                break
-            time.sleep(3)
-            port = find_cdp_port()
-            if port:
-                break
-
-    # 4. 仍未找到 -> 报错
     if not port:
         raise RuntimeError(
-            "未检测到 CDP 浏览器，自动启动也失败。\n"
-            "请手动执行：{} --remote-debugging-port=9222\n"
-            "然后重试。".format(browser_name)
+            "未检测到 CDP 浏览器。请执行：\n"
+            "  {} --remote-debugging-port=9222\n"
+            "或设为开机自启（一劳永逸）：\n"
+            '  $path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"\n'
+            '  Set-ItemProperty -Path $path -Name "EdgeCDP" -Value '"{}" --remote-debugging-port=9222'\n'
+            "启动后重新执行。".format(browser_name, browser_info.get("path", "msedge"))
         )
 
     cdp_url = "http://127.0.0.1:{}".format(port)

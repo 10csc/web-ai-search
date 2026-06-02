@@ -87,31 +87,35 @@
 
 本 Skill 需要浏览器开启远程调试端口（默认 9222，自动扫描 9222-9225）。
 
-**设计原则：信任本地单用户环境。Edge 开机自启 CDP，Agent 直接连接，零手动操作。**
+**设计原则：Agent 不自动启动浏览器。不越权，不杀进程。两个方案由用户自选。**
 
-### 自动化机制
+### Agent 行为
 
-Edge 通过注册表 Run 键开机自启：msedge --remote-debugging-port=9222。
-每次登录自动执行，Agent 无需等待用户干预。
+连接 http://127.0.0.1:9222/json/version：
+- **通** → 进入搜索
+- **不通** → 输出：
 
-### Agent 检查流程
+> CDP 不可用。请二选一：
+> **A（每次手动，更安全）**：关闭 Edge，执行 `msedge --remote-debugging-port=9222`，然后告诉我继续。
+> **B（开机自启，更方便）**：执行以下一次性配置后重启：
+> ```
+> $path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+> Set-ItemProperty -Path $path -Name "EdgeCDP" -Value '"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9222'
+> ```
 
-Agent 无需手动检查 CDP。common.py 的 ensure_browser 已内置自动恢复：
-1. 扫描端口 → 发现 Edge 在运行但无 CDP → 自动杀进程重启
-2. 启动 Edge CDP 模式 → 最多重试 3 次（每次等 3 秒）
-3. 3 次均失败 → 才报错提示用户手动执行 `msedge --remote-debugging-port=9222`
+### 方案对比
 
-**正常情况 Agent 静默连接，无需用户干预。**
+| | A：手动 | B：开机自启 |
+|------|------|------|
+| 自动化 | 每次搜索前手动一行命令 | 零操作 |
+| 安全 | CDP 仅搜索窗口期暴露 | CDP 常驻 |
+| 配置 | 零 | 一次 PowerShell |
+| 推荐 | 安全性优先 | 便利性优先 |
 
 ### 安全分析
 
-| 项 | 说明 |
-|------|------|
-| CDP 端口 | 仅监听 127.0.0.1，外部网络不可达。网页 fetch 受浏览器同源策略限制无法读取响应 |
-| 本地威胁 | 信任单用户开发机。同机恶意进程可通过 CDP 操控浏览器，但若恶意代码已在本地运行，CDP 是次要威胁 |
-| 网络攻击 | **零攻击面。** 127.0.0.1 不外暴露，不存在网络侧入侵路径 |
+CDP 仅监听 127.0.0.1，外部网络不可达。网页 fetch 受同源策略限制无法读取响应。信任本地单用户环境，两种方案风险均可控。
 
-### 风险分析
 
 | 风险 | 等级 | 说明 |
 |------|------|------|
