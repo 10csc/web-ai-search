@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """common utilities —— 配置读取、CDP连接、端口管理、会话路由"""
 import json
 import os
@@ -110,12 +110,17 @@ def _scan_port(port):
         return None
 
 
-def find_cdp_port():
-    """快速扫描 CDP 端口。先试默认端口 9222，再扫 9223-9225，返回可用端口号或 None"""
-    ws = _scan_port(DEFAULT_CDP_PORT)
-    if ws:
-        return DEFAULT_CDP_PORT
+def find_cdp_port(preferred=None):
+    """扫描 CDP 端口。优先扫用户配置端口(如果有)，再扫默认端口和范围。返回可用端口号或 None"""
+    scan_order = []
+    if preferred and preferred not in scan_order:
+        scan_order.append(preferred)
+    if DEFAULT_CDP_PORT not in scan_order:
+        scan_order.append(DEFAULT_CDP_PORT)
     for port in range(CDP_SCAN_RANGE[0] + 1, CDP_SCAN_RANGE[1] + 1):
+        if port not in scan_order:
+            scan_order.append(port)
+    for port in scan_order:
         ws = _scan_port(port)
         if ws:
             return port
@@ -132,6 +137,7 @@ def _launch_browser(port=None):
     import subprocess
     use_port = port or DEFAULT_CDP_PORT
     print("[*] 启动浏览器 (CDP: {})...".format(use_port))
+    # 注意：优先使用用户配置的端口，扫描时也会优先扫此端口
     subprocess.Popen(
         [browser_path, "--remote-debugging-port={}".format(use_port)],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
@@ -145,33 +151,30 @@ def _launch_browser(port=None):
     return None  # 端口未就绪，返回 None 让上层处理
 def ensure_browser(p, cdp_port=None):
     """连接 CDP 浏览器。
-    扫描 CDP 端口。不通则提示用户手动启动浏览器。
+    扫描 CDP 端口（用户配置优先）。不通则提示用户手动启动浏览器。
     返回 (browser, page)。
     """
     config = load_config()
     browser_info = config.get("local_env", {}).get("browser", {})
     browser_name = os.path.basename(browser_info.get("path", "msedge.exe"))
-
-    port = find_cdp_port()
+    port = find_cdp_port(preferred=cdp_port)
     if not port:
+        p = cdp_port or DEFAULT_CDP_PORT
         raise RuntimeError(
-            "未检测到 CDP 浏览器。请执行：\n"
-            "  {} --remote-debugging-port=9222\n"
-            "或设为开机自启（一劳永逸）：\n"
-            '  $path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"\n'
-            '  Set-ItemProperty -Path $path -Name "EdgeCDP" -Value '"{}" --remote-debugging-port=9222'\n'
-            "启动后重新执行。".format(browser_name, browser_info.get("path", "msedge"))
+            "未检测到 CDP 浏览器。请二选一：\n"
+            "  A: 执行 {0} --remote-debugging-port={1}\n"
+            "  B: 右键 Edge 快捷方式 -> 属性 -> 目标加 --remote-debugging-port={1}".format(
+                browser_name, p)
         )
-
-    cdp_url = "http://127.0.0.1:{}".format(port)
-    print("[*] 连接浏览器 (CDP: {})...".format(port))
+    cdp_url = "http://127.0.0.1:{0}".format(port)
+    print("[*] 连接浏览器 (CDP: {0})...".format(port))
     try:
         browser = p.chromium.connect_over_cdp(cdp_url, timeout=5000)
     except Exception as e:
         raise RuntimeError(
-            "CDP 连接失败 (端口 {})：{}\n"
+            "CDP 连接失败 (端口 {0})：{1}\n"
             "请确认浏览器已启动并开启远程调试：\n"
-            "  {} --remote-debugging-port={}".format(port, e, browser_name, port)
+            "  {2} --remote-debugging-port={0}".format(port, e, browser_name)
         )
     contexts = browser.contexts
     if not contexts or not contexts[0].pages:
@@ -185,7 +188,8 @@ def ensure_page(browser, url, new_tab=False):
     pages = browser.contexts[0].pages
     if not new_tab:
         for page in pages:
-            if url in page.url:
+            # 精确匹配：startswith 防止子串误匹配（如 /chat/ 匹配到 /chat/old-session）
+            if page.url.startswith(url) or page.url == url:
                 return page
     page = browser.contexts[0].new_page()
     page.goto(url, timeout=30000, wait_until="domcontentloaded")

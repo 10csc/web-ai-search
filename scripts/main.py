@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """web-ai-search 入口 —— send / extract / auto 三模式"""
 import argparse, time, sys, os, json, importlib, importlib.util
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -25,7 +25,7 @@ def _ensure_script_generated(platform, url):
     except ImportError: raise RuntimeError("未安装 playwright，请运行: python setup.py")
     config = load_config()
     with sync_playwright() as p:
-        browser, _page = ensure_browser(p, config.get("cdp_port", common.DEFAULT_CDP_PORT))
+        browser, _page = ensure_browser(p, config.get("cdp_port", DEFAULT_CDP_PORT))
         project = get_or_create_project()
         target_url = get_session_url(project=project, default_url=url)
         page = ensure_page(browser, target_url); time.sleep(1)
@@ -111,7 +111,7 @@ def run_extract(prompt, topic, url):
     except ImportError: return "ERROR: 未安装 playwright，请运行: python setup.py"
     config = load_config()
     with sync_playwright() as p:
-        browser, _page = ensure_browser(p, config.get("cdp_port", common.DEFAULT_CDP_PORT))
+        browser, _page = ensure_browser(p, config.get("cdp_port", DEFAULT_CDP_PORT))
         project = get_or_create_project()
         target_url = get_session_url(project=project, default_url=url)
         page = ensure_page(browser, target_url); time.sleep(1)
@@ -143,7 +143,7 @@ def run_auto(prompt, topic, url, force_regenerate=False, max_wait=300):
     except ImportError: return "ERROR: 未安装 playwright，请运行: python setup.py"
     config = load_config()
     with sync_playwright() as p:
-        browser, _page = ensure_browser(p, config.get("cdp_port", common.DEFAULT_CDP_PORT))
+        browser, _page = ensure_browser(p, config.get("cdp_port", DEFAULT_CDP_PORT))
         project = get_or_create_project()
         target_url = get_session_url(project=project, default_url=url)
         page = ensure_page(browser, target_url)
@@ -176,6 +176,33 @@ def run_auto(prompt, topic, url, force_regenerate=False, max_wait=300):
                 last_len = len(content)
                 elapsed = int(time.time() - start_ts)
                 print(f"[自动] 结构完整 ({len(content)}字符, {elapsed}s, 稳定{stable_count}/3)")
+            else:
+                # 提取失败时输出诊断信息
+                if marker_count >= 2:
+                    print(f"[轮询] {elapsed}s | 页面={len(raw)}字符 | 标记={marker_count} | 提取失败(标记足够但内容未通过验证)")
+                else:
+                    print(f"[轮询] {elapsed}s | 页面={len(raw)}字符 | 标记={marker_count} | 等待更多标记...")
+                # 内容充裕兜底：标记>=2、页面>2000字符、已等待>60秒 → 跳过 CoT 检测，直接用标记对截取
+                if marker_count >= 2 and len(raw) > 2000 and elapsed > 60:
+                    marker = f"[搜索主题：{topic}]"
+                    positions = []
+                    idx = 0
+                    while True:
+                        idx = raw.find(marker, idx)
+                        if idx == -1:
+                            break
+                        positions.append(idx)
+                        idx += len(marker)
+                    if len(positions) >= 2:
+                        forced = raw[positions[-2] + len(marker):positions[-1]].strip()
+                        if len(forced) > 300:
+                            print(f"[自动] 强制提取 ({len(forced)}字符, {elapsed}s)")
+                            log_entry(get_project_name(), "output", forced[:50000])
+                            data_dir = os.path.join(os.path.dirname(SCRIPT_DIR), "data")
+                            os.makedirs(data_dir, exist_ok=True)
+                            with open(os.path.join(data_dir, "latest_result.md"), "w", encoding="utf-8") as f:
+                                f.write(forced)
+                            return forced
         raw = safe_page_text(page)
         content = extract_content(raw, prompt, topic)
         if content and len(content) > 300:
@@ -192,6 +219,9 @@ def run_auto(prompt, topic, url, force_regenerate=False, max_wait=300):
 # ====== CLI ======
 
 if __name__ == "__main__":
+    import sys as _sys
+    _sys.stdout.reconfigure(encoding='utf-8')
+    _sys.stderr.reconfigure(encoding='utf-8')
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", "-m", required=True, choices=["send","extract","auto"])
     parser.add_argument("--prompt", "-p", default="")

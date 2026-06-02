@@ -2,18 +2,22 @@
 """提取模块：用标记定位 → 基本有效性检查（不验证格式）"""
 
 
-def is_content_complete(text):
-    """只做存在性检查。格式正确性是 prompt 的事。"""
+def is_content_complete(text, skip_cot_check=False):
+    """只做存在性检查。格式正确性是 prompt 的事。
+    skip_cot_check=True: 调用方已确认内容来自标记对精确截取，跳过 CoT 检测。
+    """
     if not text or len(text) < 150:
         return False
     if text.strip().startswith("请联网搜索"):
         return False
-    # CoT / 页尾特征：不是正式回复内容
-    head = text.strip()[:200]
+    # CoT 检测：仅匹配 DeepSeek CoT 面板独有标题"已思考"
+    # "搜索到""个网页"会出现在合法搜索回复中，不参与检测
+    if not skip_cot_check:
+        head = text.strip()[:200]
+        if "已思考" in head:
+            return False
+    # 页尾特征：排除 AI 平台页面底部 UI 文字
     tail = text.strip()[-200:]
-    cot_markers = ["已思考", "搜索到", "个网页"]
-    if any(m in head for m in cot_markers):
-        return False
     footer_markers = ["内容由 AI 生成", "本回答由 AI 生成"]
     if any(m in tail for m in footer_markers):
         return False
@@ -52,7 +56,8 @@ def _extract_core_keywords(topic):
 def _contains_keywords(text, keywords):
     if not keywords:
         return True
-    return sum(1 for kw in keywords if kw in text) >= 1
+    low = text.lower()
+    return sum(1 for kw in keywords if kw.lower() in low) >= 1
 
 
 def extract_content(raw_text, prompt, topic):
@@ -72,6 +77,12 @@ def extract_content(raw_text, prompt, topic):
         # 标记不足2个，取最后一个标记之后的所有内容作为降级
         if len(positions) == 1:
             content = raw_text[positions[0] + len(marker):].strip()
+            # 尾部清理：截断已知的页面 UI 尾文字（单标记降级会捕获全页内容）
+            for footer_kw in ["内容由 AI 生成", "本回答由 AI 生成", "请谨慎参考"]:
+                pos = content.find(footer_kw)
+                if pos > 0 and pos > len(content) * 0.7:
+                    content = content[:pos].strip()
+                    break
             if is_content_complete(content):
                 return content
         return None
@@ -81,17 +92,30 @@ def extract_content(raw_text, prompt, topic):
     end_pos = positions[-1]
     content = raw_text[start_pos:end_pos].strip()
 
-    if is_content_complete(content):
+    if is_content_complete(content, skip_cot_check=True):
         core_keywords = _extract_core_keywords(topic)
-        if core_keywords and not _contains_keywords(content, core_keywords):
+        # 排除 @hash 标记（不会出现在模型回复中）
+        topic_kws = [k for k in core_keywords if not (k.startswith("@") and len(k) == 5)]
+        if topic_kws and not _contains_keywords(content, topic_kws):
             return None
         return content
 
+    # 最后一对之间内容极短（<10字符）→ 两个标记来自不同来源（prompt尾+AI首），AI未完成
+    if len(content) < 10:
+        return None
+
     # 最后一对之间的内容无效（可能是 CoT），取最后一个标记之后的内容
     fallback = raw_text[positions[-1] + len(marker):].strip()
+    # 尾部清理：截断页面 UI 尾文字
+    for footer_kw in ["内容由 AI 生成", "本回答由 AI 生成", "请谨慎参考"]:
+        pos = fallback.find(footer_kw)
+        if pos > 0 and pos > len(fallback) * 0.7:
+            fallback = fallback[:pos].strip()
+            break
     if is_content_complete(fallback):
         core_keywords = _extract_core_keywords(topic)
-        if core_keywords and not _contains_keywords(fallback, core_keywords):
+        topic_kws2 = [k for k in core_keywords if not (k.startswith("@") and len(k) == 5)]
+        if topic_kws2 and not _contains_keywords(fallback, topic_kws2):
             return None
         return fallback
 
