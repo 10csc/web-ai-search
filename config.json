@@ -1,15 +1,39 @@
-﻿{
+{
   "version": 6,
   "session_mode": "fixed",
   "_session_mode_help": "fixed=使用sessions中的项目链接; auto=Agent自行管理对话",
-  "sessions": {},
-  "_sessions_help": "项目名→固定链接映射，如 {\"my_project\": {\"deepseek\": \"https://chat.deepseek.com/a/chat/s/xxx\"}}。手动添加或由Agent自动填充",
-  "current_project": "",
+  "sessions": {
+    "opencv": {
+      "deepseek": "https://chat.deepseek.com/a/chat/s/7de50206-efaa-4209-8acd-778783fc51fc"
+    }
+  },
+  "_sessions_help": "项目名→固定链接映射，如 {\"my_project\": \"https://chat.deepseek.com/a/chat/s/xxx\"}",
+  "current_project": "opencv",
   "deepseek_api": "http://localhost:3688/v1",
-  "cdp_port": 9222,
+  "cdp_port": 9223,
   "project_name": "web_ai_search",
   "local_env": {
-    "initialized": false,
-    "_instructions": "运行 python setup.py 自动填充此字段。首次使用请先执行 python scripts/setup.py。"
+    "initialized": true,
+    "os": {
+      "type": "windows",
+      "encoding": "utf-8",
+      "path_sep": "\\",
+      "temp_dir": "C:\\Users\\FANGL\\AppData\\Local\\Temp"
+    },
+    "shell": {
+      "type": "powershell",
+      "path": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "version": "unknown"
+    },
+    "python": {
+      "path": "D:\\python_all\\Python312\\python.exe",
+      "version": "3.12.6"
+    },
+    "python_venv": "C:\\Users\\FANGL\\.codex\\skills\\web-ai-search\\venv\\Scripts\\python.exe",
+    "browser": {
+      "type": "edge",
+      "path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+      "cdp_port": 9222
+    }
   }
 }

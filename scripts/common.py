@@ -9,8 +9,8 @@ SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(SKILL_DIR, "config.json")
 
 CURRENT_VERSION = 6
-DEFAULT_CDP_PORT = 9222
-CDP_SCAN_RANGE = (9222, 9225)
+DEFAULT_CDP_PORT = 9223
+CDP_SCAN_RANGE = (9223, 9226)
 DEFAULT_URL = "https://chat.deepseek.com/"
 
 
