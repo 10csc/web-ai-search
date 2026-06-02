@@ -6,7 +6,7 @@ if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
 
-from common import (load_config, ensure_browser, ensure_page, detect_platform, get_or_create_project,
+from common import (DEFAULT_CDP_PORT, load_config, ensure_browser, ensure_page, detect_platform, get_or_create_project,
                     safe_page_text, get_project_name, _save_session, get_session_url)
 from generator import script_exists, generate_interaction_script, get_platform_script_path
 from logger import log_entry
@@ -25,7 +25,7 @@ def _ensure_script_generated(platform, url):
     except ImportError: raise RuntimeError("未安装 playwright，请运行: python setup.py")
     config = load_config()
     with sync_playwright() as p:
-        browser, _page = ensure_browser(p, config.get("cdp_port", 9222))
+        browser, _page = ensure_browser(p, config.get("cdp_port", common.DEFAULT_CDP_PORT))
         project = get_or_create_project()
         target_url = get_session_url(project=project, default_url=url)
         page = ensure_page(browser, target_url); time.sleep(1)
@@ -34,7 +34,22 @@ def _ensure_script_generated(platform, url):
 
 # ====== send ======
 
+def _try_submit(plat, page, prompt):
+    """尝试填prompt+提交，返回 (remaining, success)"""
+    plat.fill_prompt(page, prompt)
+    plat.dismiss_blockers(page)
+    plat.submit(page)
+    time.sleep(1)
+    remaining = page.evaluate(
+        "() => {let e=document.querySelector('[contenteditable=true],textarea');"
+        "return e?(e.value||e.innerText||'').length:-1}")
+    return remaining, (remaining is not None and remaining <= 2)
+
+
 def run_send(prompt, topic, url, force_regenerate=False):
+    """发送prompt到浏览器AI平台。
+    三段式：1)尝试已有链接 -> 2)重试submit -> 3)链接失效则回退新开会话。
+    """
     platform = detect_platform(url)
     print(f"[发送] 平台: {platform}")
     if force_regenerate or not script_exists(platform):
@@ -45,28 +60,46 @@ def run_send(prompt, topic, url, force_regenerate=False):
     except ImportError: return "ERROR: 未安装 playwright，请运行: python setup.py"
     config = load_config()
     project = get_or_create_project()
-    sessions = config.get("sessions", {})
-    is_new = (config.get("session_mode", "fixed") == "fixed" and project and project not in sessions)
+    is_fixed = config.get("session_mode", "fixed") == "fixed"
 
     with sync_playwright() as p:
-        browser, _page = ensure_browser(p, config.get("cdp_port", 9222))
+        browser, _page = ensure_browser(p, config.get("cdp_port", DEFAULT_CDP_PORT))
         target_url = get_session_url(project=project, default_url=url)
         page = ensure_page(browser, target_url)
-        plat.fill_prompt(page, prompt)
-        plat.dismiss_blockers(page)
-        plat.submit(page)
-        remaining = page.evaluate("() => {let e=document.querySelector('[contenteditable=true],textarea');return e?(e.value||e.innerText||'').length:-1}")
 
-        if config.get("session_mode", "fixed") == "fixed" and remaining is not None and remaining <= 2:
+        # 第1次：发送到已有/默认链接
+        remaining, ok = _try_submit(plat, page, prompt)
+        if ok:
             current_url = page.url
-            if current_url != target_url:
+            if is_fixed and current_url != target_url:
                 _save_session(project, current_url)
                 print("[发送] 已绑定: {} -> {}".format(project, current_url[:80]))
+            print("[发送] 成功 (残留{}字符)".format(remaining))
+            return "OK"
 
+        # 第2次：重试 submit（可能UI延迟导致第一次残留）
+        print("[发送] 残留{}字符, 重试提交...".format(remaining))
+        plat.submit(page); time.sleep(1)
+        remaining = page.evaluate(
+            "() => {let e=document.querySelector('[contenteditable=true],textarea');"
+            "return e?(e.value||e.innerText||'').length:-1}")
         if remaining is not None and remaining <= 2:
-            print("[发送] 成功 (残留{0}字符)".format(remaining)); return "OK"
-        else:
-            print(f"[发送] 残留{remaining}字符,重试"); plat.submit(page); return "OK"
+            print("[发送] 重试成功")
+            if is_fixed and page.url != target_url:
+                _save_session(project, page.url)
+            return "OK"
+
+        # 第3次：链接失效，回退默认URL新开会话
+        if is_fixed:
+            print("[发送] 链接可能失效，回退新开会话...")
+            page = ensure_page(browser, url)  # 回退到平台首页
+            remaining, ok = _try_submit(plat, page, prompt)
+            if ok:
+                _save_session(project, page.url)
+                print("[发送] 新会话绑定: {} -> {}".format(project, page.url[:80]))
+                return "OK"
+
+        return "ERROR: 发送失败 (残留{}字符，3次尝试均失败)".format(remaining)
 
 
 # ====== extract ======
@@ -78,7 +111,7 @@ def run_extract(prompt, topic, url):
     except ImportError: return "ERROR: 未安装 playwright，请运行: python setup.py"
     config = load_config()
     with sync_playwright() as p:
-        browser, _page = ensure_browser(p, config.get("cdp_port", 9222))
+        browser, _page = ensure_browser(p, config.get("cdp_port", common.DEFAULT_CDP_PORT))
         project = get_or_create_project()
         target_url = get_session_url(project=project, default_url=url)
         page = ensure_page(browser, target_url); time.sleep(1)
@@ -110,7 +143,7 @@ def run_auto(prompt, topic, url, force_regenerate=False, max_wait=300):
     except ImportError: return "ERROR: 未安装 playwright，请运行: python setup.py"
     config = load_config()
     with sync_playwright() as p:
-        browser, _page = ensure_browser(p, config.get("cdp_port", 9222))
+        browser, _page = ensure_browser(p, config.get("cdp_port", common.DEFAULT_CDP_PORT))
         project = get_or_create_project()
         target_url = get_session_url(project=project, default_url=url)
         page = ensure_page(browser, target_url)
@@ -148,6 +181,10 @@ def run_auto(prompt, topic, url, force_regenerate=False, max_wait=300):
         if content and len(content) > 300:
             print(f"[自动] 超时兜底 ({len(content)}字符)")
             log_entry(get_project_name(), "output", content[:50000])
+            data_dir = os.path.join(os.path.dirname(SCRIPT_DIR), "data")
+            os.makedirs(data_dir, exist_ok=True)
+            with open(os.path.join(data_dir, "latest_result.md"), "w", encoding="utf-8") as f:
+                f.write(content)
             return content
         return "ERROR: 超时"
 

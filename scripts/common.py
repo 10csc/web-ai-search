@@ -136,11 +136,13 @@ def _launch_browser(port=None):
         [browser_path, "--remote-debugging-port={}".format(use_port)],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
-    time.sleep(3)
-    found = find_cdp_port()
-    if found:
-        return found
-    return use_port
+    # 等待端口就绪，最多等15秒
+    for _ in range(5):
+        time.sleep(3)
+        found = find_cdp_port()
+        if found:
+            return found
+    return None  # 端口未就绪，返回 None 让上层处理
 def ensure_browser(p, cdp_port=None):
     """连接 CDP 浏览器。
     扫描 CDP 端口。不通则提示用户手动启动浏览器。
@@ -247,10 +249,16 @@ def get_session_url(project=None, default_url=None):
 
 
 def _save_session(project, url):
-    """保存平台链接到 config.json（两级映射）"""
+    """保存平台链接到 config.json（两级映射）。
+    失败时打印警告但不中断主流程。
+    """
     config_path = os.path.join(SKILL_DIR, "config.json")
-    with open(config_path, "r", encoding="utf-8-sig") as f:
-        config = json.load(f)
+    try:
+        with open(config_path, "r", encoding="utf-8-sig") as f:
+            config = json.load(f)
+    except Exception as e:
+        print(f"[警告] 读取 config.json 失败: {e}")
+        return
     platform = detect_platform(url)
     sessions = config.setdefault("sessions", {})
     proj_sessions = sessions.setdefault(project, {})
@@ -260,5 +268,8 @@ def _save_session(project, url):
         proj_sessions = {old_platform: old_url}
         sessions[project] = proj_sessions
     proj_sessions[platform] = url
-    with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(config, f, ensure_ascii=False, indent=2)
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[警告] 保存会话链接失败: {e}")
