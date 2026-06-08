@@ -1,11 +1,16 @@
 # -*- coding: utf-8 -*-
-"""{platform} 平台交互模块"""
+"""DeepSeek 平台交互模块"""
+
 from playwright.sync_api import Page
 import time
 
+CAPABILITIES = ["text_input", "file_upload"]
+FILL_SEL = "[contenteditable=true], textarea, [role=textbox]"
+EXTRACT_SEL = 'div[class*="message"][class*="assistant"]'
+
 
 def fill_prompt(page, prompt_text):
-    el = page.locator("[contenteditable=true], textarea, [role=textbox]").first
+    el = page.locator(FILL_SEL).first
     el.click(timeout=5000)
     time.sleep(0.5)
     page.keyboard.press("Control+a")

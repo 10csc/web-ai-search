@@ -1,23 +1,15 @@
 # -*- coding: utf-8 -*-
 """web-ai-search 入口 —— send / extract / auto 三模式"""
-import argparse, time, sys, os, json, importlib, importlib.util
+import argparse, time, sys, os, json
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
 
 from common import (DEFAULT_CDP_PORT, load_config, ensure_browser, ensure_page, detect_platform, get_or_create_project,
-                    safe_page_text, get_project_name, _save_session, get_session_url)
-from generator import script_exists, generate_interaction_script, get_platform_script_path
+                    safe_page_text, get_project_name, _save_session, get_session_url, submit_and_verify)
+from generator import script_exists, generate_interaction_script, get_platform_script_path, load_platform_module
 from logger import log_entry
-
-
-def load_platform_module(platform):
-    script_path = get_platform_script_path(platform)
-    spec = importlib.util.spec_from_file_location(f"platform_{platform}", script_path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
 
 
 def _ensure_script_generated(platform, url):
@@ -27,7 +19,7 @@ def _ensure_script_generated(platform, url):
     with sync_playwright() as p:
         browser, _page = ensure_browser(p, config.get("cdp_port", DEFAULT_CDP_PORT))
         project = get_or_create_project()
-        target_url = get_session_url(project=project, default_url=url)
+        target_url = get_session_url(project=project, platform=platform)
         page = ensure_page(browser, target_url); time.sleep(1)
         generate_interaction_script(page, platform, page.url)
 
@@ -35,18 +27,9 @@ def _ensure_script_generated(platform, url):
 # ====== send ======
 
 def _try_submit(plat, page, prompt):
-    """尝试填prompt+提交，返回 (remaining, success)。
-    不抛异常，超时/选择器失败返回 (-1, False)。
-    """
+    """尝试填prompt+提交，返回 (remaining, success)。"""
     try:
-        plat.fill_prompt(page, prompt)
-        plat.dismiss_blockers(page)
-        plat.submit(page)
-        time.sleep(1)
-        remaining = page.evaluate(
-            "() => {let e=document.querySelector('[contenteditable=true],textarea');"
-            "return e?(e.value||e.innerText||'').length:-1}")
-        return remaining, (remaining is not None and remaining <= 2)
+        return submit_and_verify(plat, page, prompt)
     except Exception as e:
         print(f"[发送] fill/submit 异常: {e}")
         return -1, False
@@ -87,7 +70,7 @@ def run_send(prompt, topic, url, force_regenerate=False):
 
     with sync_playwright() as p:
         browser, _page = ensure_browser(p, config.get("cdp_port", DEFAULT_CDP_PORT))
-        target_url = get_session_url(project=project, default_url=url)
+        target_url = get_session_url(project=project, platform=platform)
         page = ensure_page(browser, target_url)
 
         # 重试循环：同页面最多 3 次，不回退新会话
@@ -133,7 +116,7 @@ def run_extract(prompt, topic, url):
     with sync_playwright() as p:
         browser, _page = ensure_browser(p, config.get("cdp_port", DEFAULT_CDP_PORT))
         project = get_or_create_project()
-        target_url = get_session_url(project=project, default_url=url)
+        target_url = get_session_url(project=project, platform=platform)
         page = ensure_page(browser, target_url); time.sleep(1)
         raw = safe_page_text(page)
         if not raw: return "ERROR: 页面无内容"
@@ -142,10 +125,14 @@ def run_extract(prompt, topic, url):
         marker_count = raw.count(marker)
         print(f"[提取] 标记数: {marker_count}")
 
-        from extractor import extract_content
+        from extractor import extract_content, dom_extract
         content = extract_content(raw, prompt, topic)
+        # 标记对提取失败 → DOM 兜底（用平台 EXTRACT_SEL）
+        if not content:
+            content = dom_extract(page, platform)
+            if content:
+                print(f"[提取] DOM兜底: {len(content)} 字符")
         if content:
-            # === 防呆：提取后质量验证 ===
             quality_ok, quality_report = _validate_extraction(content, marker_count)
             print(f"[提取] {'✓' if quality_ok else '⚠️'} {quality_report}")
             log_entry(get_project_name(), "output", content[:50000])
@@ -235,8 +222,8 @@ def _extract_with_evolution(page, prompt, topic, platform, polling,
             forced = raw3[positions[-1] + len(marker):].strip()
             if len(forced) > 300:
                 # 尾部清理：页尾文字 + JS 状态数据
-                for footer_kw in ["内容由 AI 生成", "本回答由 AI 生成",
-                                  "window.__NUXT__", "请仔细甄别"]:
+                from evolution import GlobalKnowledge
+                for footer_kw in GlobalKnowledge.get_footer_patterns():
                     pos = forced.find(footer_kw)
                     if pos > 0 and pos > len(forced) * 0.7:
                         forced = forced[:pos].strip()
@@ -272,7 +259,7 @@ def run_auto(prompt, topic, url, force_regenerate=False, max_wait=300):
     with sync_playwright() as p:
         browser, _page = ensure_browser(p, config.get("cdp_port", DEFAULT_CDP_PORT))
         project = get_or_create_project()
-        target_url = get_session_url(project=project, default_url=url)
+        target_url = get_session_url(project=project, platform=platform)
         page = ensure_page(browser, target_url)
         from extractor import extract_with_diagnosis, is_content_complete
         deadline = time.time() + max_wait
@@ -367,8 +354,8 @@ def run_auto(prompt, topic, url, force_regenerate=False, max_wait=300):
                         if len(forced) < 300:
                             forced = raw[positions[-2] + len(marker):positions[-1]].strip()
                         if len(forced) > 300:
-                            for footer_kw in ["内容由 AI 生成", "本回答由 AI 生成",
-                                              "window.__NUXT__", "请仔细甄别"]:
+                            from evolution import GlobalKnowledge
+                            for footer_kw in GlobalKnowledge.get_footer_patterns():
                                 pos = forced.find(footer_kw)
                                 if pos > 0 and pos > len(forced) * 0.5:
                                     forced = forced[:pos].strip()

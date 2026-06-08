@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """提取模块 —— 标记对定位 + DOM 兜底。不筛 CoT/思考链（交给整合层处理）。"""
 
+from evolution import GlobalKnowledge
+
 
 def is_content_complete(text, platform=None):
     """基本质量检查：长度够 + 不是 prompt 回显 + 不是页尾 UI。"""
@@ -10,22 +12,27 @@ def is_content_complete(text, platform=None):
         return False
     # 页尾特征排除
     tail = text.strip()[-200:]
-    for kw in ["内容由 AI 生成", "本回答由 AI 生成",
-               "window.__NUXT__", "请仔细甄别"]:
+    for kw in GlobalKnowledge.get_footer_patterns():
         if kw in tail:
             return False
     return True
 
 
-def dom_extract(page, platform="deepseek"):
-    """DOM 兜底：直接从页面元素提取最后一个 AI 回复。"""
+def _get_platform_sel(platform):
+    """从平台脚本读取 EXTRACT_SEL，找不到用兜底选择器。"""
     try:
-        if platform == "deepseek":
-            sel = 'div[class*="message"][class*="assistant"]'
-        elif platform == "kimi":
-            sel = 'div[class*="message"][class*="assistant"], div[class*="bot"]'
-        else:
-            sel = 'div[class*="message"][class*="assistant"]'
+        from generator import load_platform_module
+        mod = load_platform_module(platform)
+        return getattr(mod, "EXTRACT_SEL", 'div[class*="message"]')
+    except Exception:
+        pass
+    return 'div[class*="message"]'
+
+
+def dom_extract(page, platform="deepseek"):
+    """DOM 兜底：用平台脚本的选择器提取最后一个 AI 回复。"""
+    try:
+        sel = _get_platform_sel(platform)
         msgs = page.locator(sel)
         count = msgs.count()
         if count > 0:
@@ -94,8 +101,7 @@ def extract_with_diagnosis(raw_text, prompt, topic, platform=None):
 
 def _strip_footer(text):
     """清除页尾 UI 文字。"""
-    for kw in ["内容由 AI 生成", "本回答由 AI 生成",
-               "window.__NUXT__", "请仔细甄别"]:
+    for kw in GlobalKnowledge.get_footer_patterns():
         pos = text.find(kw)
         if pos > 0 and pos > len(text) * 0.5:
             return text[:pos].strip()

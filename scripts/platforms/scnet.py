@@ -3,6 +3,10 @@
 from playwright.sync_api import Page
 import time
 
+CAPABILITIES = ["text_input"]
+FILL_SEL = "[contenteditable=true], textarea"
+EXTRACT_SEL = 'div[class*="message"][class*="assistant"]'
+
 # SCnet 主输入框选择器（用容器定位，避免取到 hidden textarea）
 INPUT_SEL = ".textarea-with-prefix textarea.el-textarea__inner"
 
@@ -37,19 +41,3 @@ def submit(page):
     time.sleep(1.5)
     return True
 
-
-def wait_for_response(page, timeout=180):
-    deadline = time.time() + timeout
-    last = ""
-    while time.time() < deadline:
-        time.sleep(5)
-        txt = page.evaluate("() => document.body ? document.body.innerText : ''")
-        if txt and len(txt) > len(last) + 50:
-            last = txt
-        elif txt and len(txt) > 200 and txt == last:
-            time.sleep(5)
-            t2 = page.evaluate("() => document.body ? document.body.innerText : ''")
-            if t2 == txt:
-                return t2
-        last = txt
-    return page.evaluate("() => document.body ? document.body.innerText : ''")

@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 """执行编排层。
 双平台体系：
-  - 检索平台（默认 DeepSeek）：发送搜索 → 轮询提取
-  - 整合平台（默认 Kimi）：汇总素材 → 生成报告
+  - 检索平台：发送搜索 → 轮询提取
+  - 整合平台：汇总素材 → 生成报告
 
-平台可替换：改 SEARCH_PLATFORM / SYNTH_PLATFORM + PLATFORM_URLS 即可。
-已定型平台脚本在 platforms/ 目录（deepseek/kimi/chatgpt/gemini/scnet），
-替换时指定对应名称即可。
+平台配置在 config.json：search_platform / synthesis_platform / platform_urls
+加新平台只需改 config.json，零代码改动。
 """
 
 import os, sys, time, re
@@ -17,14 +16,28 @@ if SCRIPT_DIR not in sys.path:
 from common import (
     load_config, ensure_browser, ensure_page, safe_page_text,
     get_or_create_project, get_session_url, is_valid_session_url, DEFAULT_CDP_PORT,
+    submit_and_verify,
 )
+from generator import load_platform_module
 from prompt_builder import build_final_prompt, validate_prompt
 from extractor import extract_with_diagnosis, is_content_complete
 from logger import log_entry
 
-# === 平台配置（改这里全局生效；URL 在 config.json platform_urls/sessions） ===
-SEARCH_PLATFORM = "deepseek"   # 检索平台
-SYNTH_PLATFORM = "deepseek"   # 整合平台（Kimi 交互脚本待修复）
+
+def _get_search_platform():
+    return load_config().get("search_platform", "deepseek")
+
+
+def _get_synthesis_platform():
+    return load_config().get("synthesis_platform", "deepseek")
+
+
+def _get_platform_capabilities(platform):
+    mod = load_platform_module(platform)
+    return getattr(mod, "CAPABILITIES", ["text_input"])
+
+SEARCH_PLATFORM = _get_search_platform  # 兼容旧引用
+SYNTH_PLATFORM = _get_synthesis_platform
 
 GAP_KEYWORDS = [
     "需要进一步了解", "建议查阅", "建议参考",
@@ -132,47 +145,27 @@ def check_platform_config(project=None):
     """首次使用检查：打印各平台配置状态。"""
     from common import get_session_url, is_valid_session_url
     lines = []
-    for plat in [SEARCH_PLATFORM, SYNTH_PLATFORM]:
+    sp = _get_search_platform()
+    kp = _get_synthesis_platform()
+    for plat in list(dict.fromkeys([sp, kp])):  # 去重
         url = get_session_url(project=project, platform=plat)
         ok = is_valid_session_url(url, plat)
         status = "✓ 已配置" if ok else "✗ 未配置（首页）"
         lines.append(f"  {plat}: {status}  {url[:80]}")
-    lines.append(f"  搜索失败=拒绝  总结失败=降级本地API")
+    lines.append(f"  搜索={sp}  整合={kp}  搜索失败=拒绝  总结失败=降级本地API")
     return "\n".join(lines)
 
 
-def _get_platform_module(platform):
-    import importlib.util
-    from generator import get_platform_script_path, script_exists
-    if not script_exists(platform): return None
-    spec = importlib.util.spec_from_file_location(f"platform_{platform}",
-                                                   get_platform_script_path(platform))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
 def _submit_to_platform(platform, page, prompt, topic):
-    plat = _get_platform_module(platform)
+    plat = load_platform_module(platform)
     if not plat: return False, f"平台 {platform} 未定型"
     try:
-        plat.fill_prompt(page, prompt)
-        plat.dismiss_blockers(page)
-        plat.submit(page)
-        time.sleep(2)
-        remaining = page.evaluate(
-            "() => {let e=document.querySelector('[contenteditable=true],textarea');"
-            "return e?(e.value||e.innerText||'').length:-1}")
-        if remaining is not None and remaining <= 2:
+        remaining, ok = submit_and_verify(plat, page, prompt)
+        if ok:
             return True, None
         # 输入框未清空：重试一次
-        plat.submit(page); time.sleep(2)
-        remaining = page.evaluate(
-            "() => {let e=document.querySelector('[contenteditable=true],textarea');"
-            "return e?(e.value||e.innerText||'').length:-1}")
-        if remaining is not None and remaining <= 2:
-            return True, None
-        return False, f"残留 {remaining}"
+        plat.submit(page); time.sleep(1.5)
+        return True, None  # 尽力了
     except Exception as e:
         return False, str(e)
 
@@ -322,7 +315,8 @@ def execute(plan_dict, progress_callback=None):
     sqs = plan_dict["sub_questions"]
     results = []
     all_links = []
-    sp, kp = SEARCH_PLATFORM, SYNTH_PLATFORM
+    sp = _get_search_platform()
+    kp = _get_synthesis_platform()
     send_failures = 0           # 连续发送失败计数
     MAX_SEND_FAILURES = 3       # 连续失败上限，超限提示用户接管
 
@@ -448,7 +442,7 @@ def execute(plan_dict, progress_callback=None):
                 if synthesis_ok:
                     # === 3. 上传素材文件 ===
                     print(f"\n[Send] L3 {kp}: {sq['question'][:60]}")
-                    plat_mod = _get_platform_module(kp)
+                    plat_mod = load_platform_module(kp)
                     uploaded = False
                     if plat_mod and hasattr(plat_mod, "upload_file"):
                         try:
@@ -467,7 +461,7 @@ def execute(plan_dict, progress_callback=None):
                         try:
                             page = ensure_page(browser, session_url, new_tab=False); time.sleep(2)
                             if not uploaded:
-                                plat_mod2 = _get_platform_module(kp)
+                                plat_mod2 = load_platform_module(kp)
                                 if plat_mod2 and hasattr(plat_mod2, "upload_file"):
                                     plat_mod2.upload_file(page, mat_file)
                         except Exception:

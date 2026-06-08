@@ -3,6 +3,10 @@
 from playwright.sync_api import Page
 import time
 
+CAPABILITIES = ["text_input"]
+FILL_SEL = "#prompt-textarea, textarea"
+EXTRACT_SEL = 'div[class*="markdown"]'
+
 def fill_prompt(page, prompt_text):
     page.locator("body").click(timeout=3000)
     time.sleep(1)

@@ -71,7 +71,13 @@ class GlobalKnowledge:
                     data = json.load(f)
                 data.setdefault("version", 1)
                 data.setdefault("cot_patterns", {})
-                data.setdefault("footer_patterns", [])
+                # 合并默认页尾关键词（兼容旧版仅有2条的配置文件）
+                existing = data.get("footer_patterns", [])
+                defaults = GlobalKnowledge._default()["footer_patterns"]
+                for kw in defaults:
+                    if kw not in existing:
+                        existing.append(kw)
+                data["footer_patterns"] = existing
                 data.setdefault("marker_placement_model", {})
                 data.setdefault("known_models", {})
                 data.setdefault("promotion_rules", {"min_confirmations": 2, "min_content_len": 300})
@@ -89,6 +95,8 @@ class GlobalKnowledge:
             "footer_patterns": [
                 "内容由 AI 生成",
                 "本回答由 AI 生成",
+                "window.__NUXT__",
+                "请仔细甄别",
             ],
             "marker_placement_model": {},
             "known_models": {

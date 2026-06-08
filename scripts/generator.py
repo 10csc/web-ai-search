@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """LLM 代码生成器：分析页面 DOM → 生成平台交互脚本 → 缓存"""
-import json, os, time, hashlib
+import json, os, time, hashlib, importlib.util
 from common import SCRIPTS_DIR, load_config
 
 PROFILES_DIR = os.path.join(SCRIPTS_DIR, "profiles")
@@ -9,6 +9,15 @@ PLATFORMS_DIR = os.path.join(SCRIPTS_DIR, "platforms")
 
 def get_platform_script_path(platform):
     return os.path.join(PLATFORMS_DIR, f"{platform}.py")
+
+
+def load_platform_module(platform):
+    """加载平台脚本模块，所有调用方统一入口。"""
+    spec = importlib.util.spec_from_file_location(
+        f"platform_{platform}", get_platform_script_path(platform))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def get_profile_path(url):
@@ -138,9 +147,6 @@ def _call_llm_generate(platform, url, dom_info):
    - 点击发送按钮发送消息
    - 必须从输入框出发找最近的发送按钮（避免点到历史消息的编辑按钮）
    - 返回是否发送成功
-4. wait_for_response(page, timeout=180) -> str
-   - 等待 AI 回复完成
-   - 返回页面完整文本内容（用 page.evaluate("document.body.innerText")）
 
 规则：
 - 发送键：DeepSeek 用按钮点击（DOM分析按钮特征），ChatGPT 用 button[data-testid=send-button]，Gemini 用 button[aria-label="Send message"]
@@ -261,21 +267,6 @@ def submit(page):
     except Exception:
         return False
 
-def wait_for_response(page, timeout=180):
-    deadline = time.time() + timeout
-    last = ""
-    while time.time() < deadline:
-        time.sleep(5)
-        txt = page.evaluate("() => document.body ? document.body.innerText : ''")
-        if txt and len(txt) > len(last) + 50:
-            last = txt
-        elif txt and len(txt) > 200 and txt == last:
-            time.sleep(5)
-            t2 = page.evaluate("() => document.body ? document.body.innerText : ''")
-            if t2 == txt:
-                return t2
-        last = txt
-    return page.evaluate("() => document.body ? document.body.innerText : ''")
 '''
 
 def _generic_template():
@@ -324,70 +315,4 @@ def submit(page):
     except Exception:
         return False
 
-def wait_for_response(page, timeout=180):
-    deadline = time.time() + timeout
-    last = ""
-    while time.time() < deadline:
-        time.sleep(5)
-        txt = page.evaluate("() => document.body ? document.body.innerText : ''")
-        if txt and len(txt) > len(last) + 50:
-            last = txt
-        elif txt and len(txt) > 200 and txt == last:
-            time.sleep(5)
-            t2 = page.evaluate("() => document.body ? document.body.innerText : ''")
-            if t2 == txt:
-                return t2
-        last = txt
-    return page.evaluate("() => document.body ? document.body.innerText : ''")
-'''
-'''.replace('{platform}', platform)
-"""{platform} 平台交互模块（兜底模板）"""
-from playwright.sync_api import Page
-import time
-
-def fill_prompt(page, prompt_text):
-    """填入提示词"""
-    page.locator("[contenteditable=true], textarea, [role=textbox]").first.click(timeout=5000)
-    time.sleep(0.5)
-    page.keyboard.press("Control+a")
-    page.keyboard.press("Backspace")
-    page.keyboard.insert_text(prompt_text)
-    time.sleep(0.5)
-    return True
-
-def dismiss_blockers(page):
-    """清除弹窗"""
-    try:
-        page.on("dialog", lambda d: d.accept())
-    except Exception:
-        pass
-    try:
-        page.keyboard.press("Escape")
-        time.sleep(0.3)
-    except Exception:
-        pass
-
-def submit(page):
-    """发送消息"""
-    page.keyboard.press("Enter")
-    time.sleep(1.5)
-    return True
-
-def wait_for_response(page, timeout=180):
-    """等待回复"""
-    deadline = time.time() + timeout
-    last = ""
-    while time.time() < deadline:
-        time.sleep(5)
-        txt = page.evaluate("() => document.body ? document.body.innerText : ''")
-        if txt and len(txt) > len(last) + 50:
-            last = txt
-        elif txt and len(txt) > 200 and txt == last:
-            # 连续两次无变化认为完成
-            time.sleep(5)
-            txt2 = page.evaluate("() => document.body ? document.body.innerText : ''")
-            if txt2 == txt:
-                return txt2
-        last = txt
-    return page.evaluate("() => document.body ? document.body.innerText : ''")
 '''

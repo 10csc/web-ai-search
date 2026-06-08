@@ -12,7 +12,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
-from orchestrator import SEARCH_PLATFORM, SYNTH_PLATFORM
+from orchestrator import _get_search_platform, _get_synthesis_platform
 
 
 def _get_llm_config():
@@ -85,7 +85,8 @@ def plan(user_query, depth="L2", project_context=None):
     project_context: 项目背景（技术栈/约束/目标），只在整合阶段使用，不注入搜索主题。
     返回 {original_query, project_context, depth, sub_questions, ...}。
     """
-    sp, kp = SEARCH_PLATFORM, SYNTH_PLATFORM
+    sp = _get_search_platform()
+    kp = _get_synthesis_platform()
     sub_questions = []
 
     if depth == "L2":

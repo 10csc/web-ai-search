@@ -1,7 +1,11 @@
 # -*- coding: utf-8 -*-
-"""{platform} 平台交互模块（兜底模板）"""
+"""Gemini 平台交互模块"""
 from playwright.sync_api import Page
 import time
+
+CAPABILITIES = ["text_input"]
+FILL_SEL = "[contenteditable=true], textarea, [role=textbox]"
+EXTRACT_SEL = 'div[class*="message"]'
 
 def fill_prompt(page, prompt_text):
     page.locator("[contenteditable=true], textarea, [role=textbox]").first.click(timeout=5000)
@@ -42,19 +46,3 @@ def submit(page):
         return True
     except Exception:
         return False
-
-def wait_for_response(page, timeout=180):
-    deadline = time.time() + timeout
-    last = ""
-    while time.time() < deadline:
-        time.sleep(5)
-        txt = page.evaluate("() => document.body ? document.body.innerText : ''")
-        if txt and len(txt) > len(last) + 50:
-            last = txt
-        elif txt and len(txt) > 200 and txt == last:
-            time.sleep(5)
-            t2 = page.evaluate("() => document.body ? document.body.innerText : ''")
-            if t2 == txt:
-                return t2
-        last = txt
-    return page.evaluate("() => document.body ? document.body.innerText : ''")

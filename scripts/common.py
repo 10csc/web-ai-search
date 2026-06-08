@@ -235,6 +235,25 @@ def ensure_page(browser, url, new_tab=False):
     return page
 
 
+# ====== 提交验证 ======
+
+def submit_and_verify(plat, page, prompt):
+    """统一的填prompt+提交+验证。返回 (remaining, success)。"""
+    plat.fill_prompt(page, prompt)
+    plat.dismiss_blockers(page)
+    plat.submit(page)
+    time.sleep(1)
+    if not getattr(plat, "VERIFY_BY_INPUT_CLEAR", True):
+        return 0, True
+    try:
+        remaining = page.evaluate(
+            "() => {let e=document.querySelector('[contenteditable=true],textarea');"
+            "return e?(e.value||e.innerText||'').length:-1}")
+        return remaining, (remaining is not None and remaining <= 2)
+    except Exception:
+        return -1, False
+
+
 # ====== 页面文本 ======
 
 def safe_page_text(page):
@@ -256,33 +275,30 @@ def safe_page_text(page):
 # ====== 平台检测 ======
 
 def detect_platform(url):
+    """从 config.json 的 platform_urls 提取域名做匹配。加新平台只需改配置。"""
+    from urllib.parse import urlparse
     url_lower = url.lower()
-    if "chatgpt.com" in url_lower: return "chatgpt"
-    if "deepseek.com" in url_lower: return "deepseek"
-    if "gemini.google.com" in url_lower: return "gemini"
-    if "scnet.cn" in url_lower: return "scnet"
-    if "kimi.moonshot.cn" in url_lower: return "kimi"
-    if "claude.ai" in url_lower: return "claude"
+    config = load_config()
+    for name, homepage in config.get("platform_urls", {}).items():
+        if not isinstance(homepage, str) or name.startswith("_"):
+            continue
+        try:
+            domain = urlparse(homepage).netloc.replace("www.", "").lower()
+            if domain and domain in url_lower:
+                return name
+        except Exception:
+            pass
     return "unknown"
 
 
 # ====== 会话路由 ======
 
-# 各平台有效聊天 URL 的特征路径（首页不含这些 = 未配置）
-CHAT_PATH_PATTERNS = {
-    "deepseek": ["/a/chat/s/"],
-    "kimi":     ["/chat/"],
-    "chatgpt":  ["/c/"],
-    "gemini":   ["/app/"],
-    "scnet":    ["/chat/"],
-}
-
-
 def is_valid_session_url(url, platform=None):
     """检查 URL 是否是真实聊天链接（非首页）。"""
     if not url:
         return False
-    patterns = CHAT_PATH_PATTERNS.get(platform, [])
+    config = load_config()
+    patterns = config.get("chat_path_patterns", {}).get(platform, []) if platform else []
     if patterns:
         return any(p in url for p in patterns)
     # 通用判断：非首页
