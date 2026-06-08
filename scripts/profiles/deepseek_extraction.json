@@ -1,0 +1,148 @@
+{
+  "platform": "deepseek",
+  "version": 1,
+  "cot_patterns": [],
+  "marker_placement": "unknown",
+  "stable_threshold": 3,
+  "fallback_strategy": "post_last_marker",
+  "evolution_log": [
+    {
+      "time": "2026-06-06T21:07:24.720841+08:00",
+      "action": "adapt_interval",
+      "detail": "轮询间隔: 2.0s → 3.0s (增速77.2cps)",
+      "version_after": 1
+    },
+    {
+      "time": "2026-06-07T20:55:15.972488+08:00",
+      "action": "adapt_interval",
+      "detail": "轮询间隔: 3.0s → 2.0s (增速235.1cps)",
+      "version_after": 1
+    },
+    {
+      "time": "2026-06-07T20:58:55.739239+08:00",
+      "action": "adapt_interval",
+      "detail": "轮询间隔: 2.0s → 3.0s (增速85.3cps)",
+      "version_after": 1
+    }
+  ],
+  "created_at": "2026-06-06T21:06:30.276905+08:00",
+  "polling": {
+    "interval_sec": 3.0,
+    "max_wait_sec": 180,
+    "growth_rate_cps": 85.3,
+    "stability_rounds": 2,
+    "samples": [
+      {
+        "time": "2026-06-07T20:58:23.414511+08:00",
+        "elapsed_sec": 52,
+        "content_len": 9028
+      },
+      {
+        "time": "2026-06-07T20:58:25.429298+08:00",
+        "elapsed_sec": 54,
+        "content_len": 9173
+      },
+      {
+        "time": "2026-06-07T20:58:27.456581+08:00",
+        "elapsed_sec": 56,
+        "content_len": 9376
+      },
+      {
+        "time": "2026-06-07T20:58:29.485131+08:00",
+        "elapsed_sec": 58,
+        "content_len": 9561
+      },
+      {
+        "time": "2026-06-07T20:58:31.504779+08:00",
+        "elapsed_sec": 60,
+        "content_len": 9703
+      },
+      {
+        "time": "2026-06-07T20:58:33.531525+08:00",
+        "elapsed_sec": 62,
+        "content_len": 9872
+      },
+      {
+        "time": "2026-06-07T20:58:35.569870+08:00",
+        "elapsed_sec": 64,
+        "content_len": 10028
+      },
+      {
+        "time": "2026-06-07T20:58:37.583640+08:00",
+        "elapsed_sec": 66,
+        "content_len": 10251
+      },
+      {
+        "time": "2026-06-07T20:58:39.596589+08:00",
+        "elapsed_sec": 68,
+        "content_len": 10525
+      },
+      {
+        "time": "2026-06-07T20:58:41.610522+08:00",
+        "elapsed_sec": 70,
+        "content_len": 10744
+      },
+      {
+        "time": "2026-06-07T20:58:43.635212+08:00",
+        "elapsed_sec": 72,
+        "content_len": 10975
+      },
+      {
+        "time": "2026-06-07T20:58:45.648774+08:00",
+        "elapsed_sec": 74,
+        "content_len": 11171
+      },
+      {
+        "time": "2026-06-07T20:58:47.677910+08:00",
+        "elapsed_sec": 76,
+        "content_len": 11325
+      },
+      {
+        "time": "2026-06-07T20:58:49.692878+08:00",
+        "elapsed_sec": 78,
+        "content_len": 11494
+      },
+      {
+        "time": "2026-06-07T20:58:51.707734+08:00",
+        "elapsed_sec": 80,
+        "content_len": 11604
+      },
+      {
+        "time": "2026-06-07T20:58:53.721211+08:00",
+        "elapsed_sec": 82,
+        "content_len": 11604
+      },
+      {
+        "time": "2026-06-07T20:58:55.735648+08:00",
+        "elapsed_sec": 84,
+        "content_len": 11604
+      },
+      {
+        "time": "2026-06-07T21:25:06.021620+08:00",
+        "elapsed_sec": 3,
+        "content_len": 2181
+      },
+      {
+        "time": "2026-06-07T21:25:09.066777+08:00",
+        "elapsed_sec": 6,
+        "content_len": 2558
+      },
+      {
+        "time": "2026-06-07T21:25:12.094062+08:00",
+        "elapsed_sec": 9,
+        "content_len": 561
+      },
+      {
+        "time": "2026-06-07T21:25:15.131068+08:00",
+        "elapsed_sec": 12,
+        "content_len": 561
+      },
+      {
+        "time": "2026-06-07T21:25:18.141115+08:00",
+        "elapsed_sec": 15,
+        "content_len": 561
+      }
+    ]
+  },
+  "updated_at": "2026-06-07T21:25:18.141115+08:00"
+}

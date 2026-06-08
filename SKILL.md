@@ -1,11 +1,57 @@
-﻿# 网页版 AI 搜索 Skill（v6）
+﻿# 网页版 AI 搜索 Agent（v7）
 
 > 通过 CDP 协议操控浏览器里的 AI 对话平台，自动发送搜索 prompt 并提取结构化回复。
+>
+> **v7 新增**：Agent 全自动模式——工具选择 → 问题分解 → 多平台并行搜索 → 交叉验证 → 报告生成。
 
+---
 
-## ⛔ 执行失败速查（Agent 必须识别，禁止反复重试）
+## 🚀 Agent 模式（推荐）
 
-**前置检查**：首次使用或报 ImportError/未初始化时，Agent 必须先确认 python setup.py 已执行，再确认 config.json 配置（local_env.initialized=true，current_project 已设置），然后根据下方 CDP 章节引导用户完成浏览器配置。三项全部就绪后才能开始搜索。
+一条命令完成全流程：
+
+```bash
+<PYTHON> scripts/agent.py "搜索问题" --depth L2
+```
+
+`<PYTHON>` = `PYTHONUTF8=1 PYTHONIOENCODING=utf-8 config.json local_env.python_venv`
+
+### 自动流程
+
+```
+用户问题
+    ↓
+[Tool Router] 判断复杂度 → WebSearch(L1) / WebAISearch L2 / L3
+    ↓
+[Planner] 分解子问题 + 路由平台 + 定深度 + 给理由
+    ↓
+[Orchestrator] 多平台并行发送 → 提取 → 缺口检测 → WebFetch 补全
+    ↓
+[Synthesizer] 交叉验证 + 信源评分 + 矛盾标记 + 报告生成
+    ↓
+data/latest_result.md
+```
+
+### 参数
+
+| 参数 | 说明 | 可选值 |
+|:---|:---|:---|
+| `--depth` / `-d` | 搜索深度 | L1(快查) / L2(标准,默认) / L3(深度) |
+| `--platform` / `-p` | 强制指定平台 | deepseek / kimi / chatgpt / gemini / perplexity / metaso |
+| `--quick` / `-q` | 快速模式（跳过分解） | — |
+| `--file` / `-f` | 从文件读取问题 | 文件路径 |
+
+### L1 说明
+
+L1 走 WebSearch 工具（非 WebAISearch）。Agent 会返回路由建议，由调用方 Agent 自行搜索。
+
+---
+
+## 📋 手动模式（兼容 v6）
+
+适用于首次定型、调试、或不需要全自动流程的场景。
+
+### ⛔ 执行失败速查
 
 | 错误信息 | 原因 | 处理 |
 |---------|------|------|
@@ -238,12 +284,25 @@ print('OK' if result and 'ERROR' not in str(result) else f'FAIL: {result}')"
 
 ## 快速参考
 
-| 平台 | URL | 模式 | TYPE |
-|------|-----|------|------|
-| deepseek | chat.deepseek.com | debug | 代码错误诊断 |
-| chatgpt | chatgpt.com | code | 技术选型 |
-| gemini | gemini.google.com | news | 新闻热点 |
-| claude | claude.ai | | |
+### Agent 模式
+
+| 命令 | 说明 |
+|:---|:---|
+| `agent.py "问题" --depth L2` | 标准搜索 |
+| `agent.py "问题" --depth L3` | 深度研究（多平台并行+交叉验证） |
+| `agent.py "问题" --quick -p deepseek` | 快速模式，指定平台 |
+
+### 手动模式
+
+| 平台 | URL | 路由场景 |
+|------|-----|---------|
+| scnet | scnet.cn | 深度推理 + 复杂架构设计（DeepSeek V4 Pro 疑似满血版） |
+| deepseek | chat.deepseek.com | 中度复杂代码 + 中文专业领域 + 单方向规划架构 |
+| kimi | kimi.moonshot.cn | 复杂架构分析 + 多方位研究 + 最新资讯整合 |
+| chatgpt | chatgpt.com | 英文信息搜索 + 最终报告整合 |
+| gemini | gemini.google.com | 英文信息搜索（Google 索引） |
+| perplexity | perplexity.ai | 简单代码 + 专业英文信息审查 |
+| metaso | metaso.cn | 中文学术/研报 |
 
 - 发送后不按 Escape | 残留 <=2 字符 = 发送成功
 - platform 脚本在 `scripts/platforms/`
@@ -251,6 +310,25 @@ print('OK' if result and 'ERROR' not in str(result) else f'FAIL: {result}')"
 
 ---
 
+## 架构 (v7)
+
+```
+scripts/
+  agent.py              # ★ v7 统一入口（全流程串联）
+  tool_router.py        # ★ 工具选择层（WebSearch / WebAISearch 路由）
+  planner.py            # ★ 规划层（问题分解 + 平台路由 + RePlan 触发）
+  orchestrator.py       # ★ 编排层（多平台并行 + 缺口检测 + WebFetch 补全）
+  synthesizer.py        # ★ 整合层（信源评分 + 交叉验证 + 报告生成）
+  workspace.py          # ★ 状态管理（Workspace + Episodic + Semantic Memory）
+  main.py               # 手动模式入口（run_send / run_extract / run_auto）
+  prompt_builder.py     # 意图识别 + prompt 生成 + 格式验证
+  extractor.py          # 标记对截取
+  generator.py          # LLM 分析 DOM → 生成交互脚本
+  common.py             # CDP 连接、配置读取
+  logger.py             # JSONL 日志
+platforms/              # 已定型的平台交互脚本
+profiles/               # DOM 分析快照
+```
 
 ---
 

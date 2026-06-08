@@ -1,0 +1,133 @@
+{
+  "platform": "scnet",
+  "version": 5,
+  "cot_patterns": [
+    "深度思考",
+    "我们被要求",
+    "根据搜索结果"
+  ],
+  "marker_placement": "after_thinking",
+  "stable_threshold": 3,
+  "fallback_strategy": "post_last_marker",
+  "evolution_log": [
+    {
+      "time": "2026-06-06T18:33:31.989076+08:00",
+      "action": "add_cot_keyword",
+      "detail": "追加CoT关键词: 深度思考",
+      "version_after": 2
+    },
+    {
+      "time": "2026-06-06T18:33:31.990074+08:00",
+      "action": "add_cot_keyword",
+      "detail": "追加CoT关键词: 我们被要求",
+      "version_after": 3
+    },
+    {
+      "time": "2026-06-06T18:33:31.990074+08:00",
+      "action": "update_marker_placement",
+      "detail": "标记位置: unknown → after_thinking",
+      "version_after": 4
+    },
+    {
+      "time": "2026-06-06T18:49:25.668227+08:00",
+      "action": "add_cot_keyword",
+      "detail": "追加CoT关键词: 根据搜索结果",
+      "version_after": 5
+    }
+  ],
+  "created_at": "2026-06-06T18:33:31.980074+08:00",
+  "updated_at": "2026-06-06T21:02:40.085701+08:00",
+  "polling": {
+    "interval_sec": 2.0,
+    "max_wait_sec": 180,
+    "growth_rate_cps": 0,
+    "stability_rounds": 2,
+    "samples": [
+      {
+        "time": "2026-06-06T18:41:10.866795+08:00",
+        "elapsed_sec": 40,
+        "content_len": 2799
+      },
+      {
+        "time": "2026-06-06T18:41:12.878848+08:00",
+        "elapsed_sec": 42,
+        "content_len": 2799
+      },
+      {
+        "time": "2026-06-06T18:41:14.894091+08:00",
+        "elapsed_sec": 44,
+        "content_len": 2799
+      },
+      {
+        "time": "2026-06-06T18:49:25.664213+08:00",
+        "elapsed_sec": 10,
+        "content_len": 3000
+      },
+      {
+        "time": "2026-06-06T18:49:25.665213+08:00",
+        "elapsed_sec": 20,
+        "content_len": 5500
+      },
+      {
+        "time": "2026-06-06T18:49:25.665213+08:00",
+        "elapsed_sec": 30,
+        "content_len": 8200
+      },
+      {
+        "time": "2026-06-06T20:54:12.080348+08:00",
+        "elapsed_sec": 30,
+        "content_len": 1855
+      },
+      {
+        "time": "2026-06-06T20:54:14.102572+08:00",
+        "elapsed_sec": 32,
+        "content_len": 1855
+      },
+      {
+        "time": "2026-06-06T20:54:16.123993+08:00",
+        "elapsed_sec": 34,
+        "content_len": 1855
+      },
+      {
+        "time": "2026-06-06T20:59:57.363195+08:00",
+        "elapsed_sec": 2,
+        "content_len": 6592
+      },
+      {
+        "time": "2026-06-06T20:59:59.376703+08:00",
+        "elapsed_sec": 4,
+        "content_len": 1061
+      },
+      {
+        "time": "2026-06-06T21:00:01.392325+08:00",
+        "elapsed_sec": 6,
+        "content_len": 1061
+      },
+      {
+        "time": "2026-06-06T21:00:03.405794+08:00",
+        "elapsed_sec": 8,
+        "content_len": 1061
+      },
+      {
+        "time": "2026-06-06T21:02:34.031643+08:00",
+        "elapsed_sec": 2,
+        "content_len": 6534
+      },
+      {
+        "time": "2026-06-06T21:02:36.052839+08:00",
+        "elapsed_sec": 4,
+        "content_len": 1032
+      },
+      {
+        "time": "2026-06-06T21:02:38.067390+08:00",
+        "elapsed_sec": 6,
+        "content_len": 1032
+      },
+      {
+        "time": "2026-06-06T21:02:40.085701+08:00",
+        "elapsed_sec": 8,
+        "content_len": 1032
+      }
+    ]
+  }
+}

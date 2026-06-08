@@ -25,7 +25,7 @@ def load_config():
     config.setdefault("version", 0)
     config.setdefault("cdp_port", DEFAULT_CDP_PORT)
     config.setdefault("project_name", "web_ai_search")
-    config.setdefault("deepseek_api", "http://localhost:3688/v1")
+    config.setdefault("deepseek_api", "https://api.deepseek.com/v1")
     if "local_env" not in config:
         config["local_env"] = {"initialized": False}
     config.setdefault("session_mode", "fixed")
@@ -38,7 +38,7 @@ def _default_config():
     return {
         "version": CURRENT_VERSION, "cdp_port": DEFAULT_CDP_PORT,
         "project_name": "web_ai_search",
-        "deepseek_api": "http://localhost:3688/v1",
+        "deepseek_api": "https://api.deepseek.com/v1",
         "local_env": {"initialized": False},
         "session_mode": "fixed", "sessions": {}, "current_project": "",
     }
@@ -127,54 +127,85 @@ def find_cdp_port(preferred=None):
     return None
 
 
-def _launch_browser(port=None):
-    """启动浏览器并返回 CDP 端口"""
+BROWSER_PATHS = [
+    # Edge 优先
+    "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+    "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
+    # Chrome fallback
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+]
+
+
+def _resolve_browser_path():
+    """获取 Edge 路径：优先 config，fallback 扫描常见路径。"""
     config = load_config()
     browser_info = config.get("local_env", {}).get("browser", {})
     browser_path = browser_info.get("path", "")
-    if not browser_path or not os.path.exists(browser_path):
+    if browser_path and os.path.exists(browser_path):
+        return browser_path
+    for p in BROWSER_PATHS:
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def _kill_browser():
+    """杀掉所有 Edge 进程，释放 Profile 文件锁。"""
+    import subprocess
+    for name in ("msedge.exe", "msedgewebview2.exe"):
+        try:
+            subprocess.run(
+                ["taskkill", "/f", "/im", name],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=10,
+            )
+        except Exception:
+            pass
+    time.sleep(1.5)
+
+
+def _launch_browser(port=None):
+    """启动 Edge 并返回 CDP 端口。先杀残留再启动，保证 Profile 锁释放。"""
+    browser_path = _resolve_browser_path()
+    if not browser_path:
         return None
     import subprocess
     use_port = port or DEFAULT_CDP_PORT
+    _kill_browser()
     print("[*] 启动浏览器 (CDP: {})...".format(use_port))
-    # 注意：优先使用用户配置的端口，扫描时也会优先扫此端口
     subprocess.Popen(
         [browser_path, "--remote-debugging-port={}".format(use_port)],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
-    # 等待端口就绪，最多等15秒
     for _ in range(5):
         time.sleep(3)
         found = find_cdp_port()
         if found:
             return found
-    return None  # 端口未就绪，返回 None 让上层处理
+    return None
 def ensure_browser(p, cdp_port=None):
-    """连接 CDP 浏览器。
-    扫描 CDP 端口（用户配置优先）。不通则提示用户手动启动浏览器。
+    """连接 CDP 浏览器。优先复用已有 CDP 连接，不可用则自动启动 Edge。
     返回 (browser, page)。
     """
-    config = load_config()
-    browser_info = config.get("local_env", {}).get("browser", {})
-    browser_name = os.path.basename(browser_info.get("path", "msedge.exe"))
     port = find_cdp_port(preferred=cdp_port)
     if not port:
-        p = cdp_port or DEFAULT_CDP_PORT
-        raise RuntimeError(
-            "未检测到 CDP 浏览器。请二选一：\n"
-            "  A: 执行 {0} --remote-debugging-port={1}\n"
-            "  B: 右键 Edge 快捷方式 -> 属性 -> 目标加 --remote-debugging-port={1}".format(
-                browser_name, p)
-        )
+        print("[*] 未检测到 CDP 浏览器，自动启动...")
+        port = _launch_browser(cdp_port or DEFAULT_CDP_PORT)
+        if not port:
+            name = os.path.basename(_resolve_browser_path() or "msedge.exe")
+            raise RuntimeError(
+                "无法自动启动浏览器。请手动执行：\n"
+                "  {0} --remote-debugging-port={1}".format(
+                    name, cdp_port or DEFAULT_CDP_PORT)
+            )
     cdp_url = "http://127.0.0.1:{0}".format(port)
     print("[*] 连接浏览器 (CDP: {0})...".format(port))
     try:
         browser = p.chromium.connect_over_cdp(cdp_url, timeout=5000)
     except Exception as e:
         raise RuntimeError(
-            "CDP 连接失败 (端口 {0})：{1}\n"
-            "请确认浏览器已启动并开启远程调试：\n"
-            "  {2} --remote-debugging-port={0}".format(port, e, browser_name)
+            "CDP 连接失败 (端口 {0})：{1}".format(port, e)
         )
     contexts = browser.contexts
     if not contexts or not contexts[0].pages:
@@ -183,17 +214,24 @@ def ensure_browser(p, cdp_port=None):
 def ensure_page(browser, url, new_tab=False):
     """在当前 context 中查找或创建目标 URL 的页面。
     new_tab=True 时始终创建新标签页，不干扰用户已有标签。
-    所有操作均后台执行，不调用 bring_to_front()。
+    匹配策略：优先 URL 精确匹配 → 平台类型匹配（处理重定向）→ 新建。
     """
+    target_platform = detect_platform(url)
     pages = browser.contexts[0].pages
     if not new_tab:
+        # 第一轮：URL 精确/前缀匹配
         for page in pages:
-            # 精确匹配：startswith 防止子串误匹配（如 /chat/ 匹配到 /chat/old-session）
             if page.url.startswith(url) or page.url == url:
+                return page
+        # 第二轮：平台匹配（处理重定向，如 kimi.moonshot.cn → scnet.cn）
+        for page in pages:
+            page_platform = detect_platform(page.url)
+            if page_platform == target_platform and page_platform != "unknown":
                 return page
     page = browser.contexts[0].new_page()
     page.goto(url, timeout=30000, wait_until="domcontentloaded")
     time.sleep(3)
+    return page
     return page
 
 
@@ -222,34 +260,61 @@ def detect_platform(url):
     if "chatgpt.com" in url_lower: return "chatgpt"
     if "deepseek.com" in url_lower: return "deepseek"
     if "gemini.google.com" in url_lower: return "gemini"
+    if "scnet.cn" in url_lower: return "scnet"
+    if "kimi.moonshot.cn" in url_lower: return "kimi"
     if "claude.ai" in url_lower: return "claude"
     return "unknown"
 
 
 # ====== 会话路由 ======
 
-def get_session_url(project=None, default_url=None):
+# 各平台有效聊天 URL 的特征路径（首页不含这些 = 未配置）
+CHAT_PATH_PATTERNS = {
+    "deepseek": ["/a/chat/s/"],
+    "kimi":     ["/chat/"],
+    "chatgpt":  ["/c/"],
+    "gemini":   ["/app/"],
+    "scnet":    ["/chat/"],
+}
+
+
+def is_valid_session_url(url, platform=None):
+    """检查 URL 是否是真实聊天链接（非首页）。"""
+    if not url:
+        return False
+    patterns = CHAT_PATH_PATTERNS.get(platform, [])
+    if patterns:
+        return any(p in url for p in patterns)
+    # 通用判断：非首页
+    from urllib.parse import urlparse
+    path = urlparse(url).path.strip("/")
+    return len(path) > 0
+
+
+def get_session_url(project=None, platform=None):
     """fixed 模式按 project+platform 两级查找会话链接。
-    sessions 结构: {"项目名": {"deepseek": "https://...", "chatgpt": "https://..."}}
+
+    优先级：sessions.{project}.{platform} > platform_urls.{platform} > 拼凑
     """
     config = load_config()
+    platform_urls = config.get("platform_urls", {})
+    fallback = platform_urls.get(platform, f"https://chat.{platform}.com/") if platform else DEFAULT_URL
     mode = config.get("session_mode", "fixed")
     if mode != "fixed":
-        return default_url or DEFAULT_URL
+        return fallback
 
     project = project or config.get("current_project", "") or _auto_project()
     sessions = config.get("sessions", {})
-    platform = detect_platform(default_url or DEFAULT_URL)
 
     proj_sessions = sessions.get(project, {})
-    if isinstance(proj_sessions, dict) and platform in proj_sessions:
+    if isinstance(proj_sessions, dict) and platform and platform in proj_sessions:
         return proj_sessions[platform]
 
-    # 兼容旧格式：sessions[project] 直接是 URL 字符串
+    # 兼容旧格式
     if isinstance(proj_sessions, str) and proj_sessions:
         return proj_sessions
 
-    return default_url or DEFAULT_URL
+    return fallback
 
 
 def _save_session(project, url):

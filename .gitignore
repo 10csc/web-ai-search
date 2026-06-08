@@ -18,5 +18,10 @@ logs/
 .DS_Store
 Thumbs.db
 
+# User config (contains secrets, use config.example.json as template)
+config.json
+
 # Temp
 *.tmp
+
+WebAISearch-最初版/

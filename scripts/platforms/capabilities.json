@@ -1,0 +1,96 @@
+{
+  "_description": "平台能力画像。Planner 的 LLM 输出所需能力标签，系统据此匹配平台。Orchestrator 每次执行后更新 health 字段。",
+  "platforms": {
+    "deepseek": {
+      "url": "https://chat.deepseek.com/",
+      "capability_tags": ["chinese_technical", "code_analysis", "deep_reasoning"],
+      "model": "DeepSeek V4 Flash+Think（免费版快速模式）",
+      "strengths": "深度推理、中文编程天花板、不限流",
+      "limitations": "当前仅快速模式可用，分析深度受限",
+      "search_coverage": "wide",
+      "typical_latency_sec": 60,
+      "health": { "success_rate": 0.90, "avg_latency_sec": 60, "last_updated": null }
+    },
+    "scnet": {
+      "url": "https://www.scnet.cn/ui/chatbot/",
+      "capability_tags": ["deep_reasoning", "file_upload", "code_analysis", "final_synthesis"],
+      "model": "DeepSeek V4 Pro（满血版）",
+      "strengths": "V4 Pro 满血推理、支持文件上传（关联网搜索）、天然适合最终报告整合",
+      "limitations": "搜索限制约 10 个网页",
+      "search_coverage": "narrow",
+      "typical_latency_sec": 45,
+      "health": { "success_rate": 0.90, "avg_latency_sec": 45, "last_updated": null }
+    },
+    "kimi": {
+      "url": "https://www.kimi.com/",
+      "capability_tags": ["chinese_ecosystem", "long_context", "wide_search", "final_synthesis"],
+      "model": "Kimi K2.6",
+      "strengths": "中文信息覆盖最强（微信/知乎/CSDN）、WideSearch 80.8% 榜首、200万字符上下文",
+      "limitations": "速度最慢（需独立长轮询策略）、高负载时稳定性下降",
+      "search_coverage": "widest",
+      "typical_latency_sec": 120,
+      "health": { "success_rate": 0.80, "avg_latency_sec": 120, "last_updated": null }
+    },
+    "chatgpt": {
+      "url": "https://chatgpt.com/",
+      "capability_tags": ["english_search", "summarization", "general_knowledge"],
+      "model": "GPT-5.x（免费阉割版）",
+      "strengths": "总结归纳扎实、Bing 索引",
+      "limitations": "严格限流、次数极少、仅作备选",
+      "search_coverage": "medium",
+      "typical_latency_sec": 30,
+      "health": { "success_rate": 0.85, "avg_latency_sec": 30, "last_updated": null }
+    },
+    "gemini": {
+      "url": "https://gemini.google.com/",
+      "capability_tags": ["english_search", "fast_lookup", "data_extraction", "real_time"],
+      "model": "Gemini Flash",
+      "strengths": "Google 索引、搜索速度最快（秒级）",
+      "limitations": "深度不如 DeepSeek/Kimi",
+      "search_coverage": "wide",
+      "typical_latency_sec": 8,
+      "health": { "success_rate": 0.75, "avg_latency_sec": 8, "last_updated": null }
+    },
+    "perplexity": {
+      "url": "https://www.perplexity.ai/",
+      "capability_tags": ["english_academic", "citation_quality", "data_extraction"],
+      "model": "基础模型",
+      "strengths": "英文检索精度高、引用格式规范",
+      "limitations": "免费版约 5 次/天，需节约使用",
+      "search_coverage": "medium",
+      "typical_latency_sec": 20,
+      "health": { "success_rate": 0.80, "avg_latency_sec": 20, "last_updated": null }
+    },
+    "metaso": {
+      "url": "https://metaso.cn/",
+      "capability_tags": ["chinese_academic", "structured_output", "cross_validation"],
+      "model": "自研",
+      "strengths": "知网/万方穿透、结构化大纲输出",
+      "limitations": "通用领域弱",
+      "search_coverage": "narrow",
+      "typical_latency_sec": 30,
+      "health": { "success_rate": 0.85, "avg_latency_sec": 30, "last_updated": null }
+    }
+  },
+  "capability_explanations": {
+    "chinese_technical": "中文技术问题、国内 API/SDK、中文编程语境",
+    "chinese_ecosystem": "中文封闭生态（微信公众号、知乎、CSDN、掘金等）",
+    "code_analysis": "代码理解、Bug 诊断、架构分析",
+    "deep_reasoning": "深度推理、复杂架构设计、多方案对比",
+    "long_context": "超长文本处理、多文档综合分析",
+    "wide_search": "广域搜索、多源覆盖",
+    "fast_lookup": "快速事实确认、实时信息",
+    "data_extraction": "结构化数据提取、统计数字、调查结果",
+    "english_search": "英文信息搜索、国际视野",
+    "english_academic": "英文学术/官方文档审查",
+    "chinese_academic": "中文学术论文、知网/万方研报",
+    "file_upload": "支持上传文件进行分析",
+    "final_synthesis": "整合多方结果、生成最终报告",
+    "summarization": "总结归纳",
+    "structured_output": "结构化输出（大纲/表格/导图）",
+    "cross_validation": "交叉验证、多源对照",
+    "real_time": "实时信息、新闻热点",
+    "citation_quality": "引用格式规范、来源可追溯",
+    "general_knowledge": "通用知识、广泛话题"
+  }
+}

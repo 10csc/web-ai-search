@@ -1,0 +1,53 @@
+{
+  "version": 6,
+  "session_mode": "fixed",
+  "_session_mode_help": "fixed=使用sessions中的项目链接; auto=Agent自行管理对话",
+  "platform_urls": {
+    "_help": "各平台默认首页，get_session_url 的兜底值",
+    "deepseek": "https://chat.deepseek.com/",
+    "kimi": "https://www.kimi.com/",
+    "chatgpt": "https://chatgpt.com/",
+    "gemini": "https://gemini.google.com/",
+    "scnet": "https://scnet.cn/"
+  },
+  "sessions": {
+    "_help": "项目名 → 平台 → 聊天链接。用户手动创建聊天后把链接贴到这里。",
+    "opencv": {
+      "deepseek": "https://chat.deepseek.com/a/chat/s/1cb72bf3-cace-4abd-9956-c924e70c1a68"
+    },
+    "codex-research": {
+      "deepseek": "https://chat.deepseek.com/a/chat/s/2eaa2ec7-5735-4a64-ad73-366c7abd1477",
+      "kimi": "https://www.kimi.com/chat/19ea5399-2162-8a03-8000-091fdde06aab?chat_enter_method=shortcut"
+    }
+  },
+  "current_project": "codex-research",
+  "deepseek_api": "https://api.deepseek.com/v1",
+  "deepseek_key": "",
+  "_deepseek_key_note": "在此填入你的 DeepSeek API key",
+  "cdp_port": 9222,
+  "project_name": "web_ai_search",
+  "local_env": {
+    "initialized": true,
+    "os": {
+      "type": "windows",
+      "encoding": "utf-8",
+      "path_sep": "\\",
+      "temp_dir": "C:\\Users\\FANGL\\AppData\\Local\\Temp"
+    },
+    "shell": {
+      "type": "powershell",
+      "path": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "version": "unknown"
+    },
+    "python": {
+      "path": "D:\\python_all\\Python312\\python.exe",
+      "version": "3.12.6"
+    },
+    "python_venv": "C:/Users/FANGL/.agents/skills/web-ai-search/venv/Scripts/python.exe",
+    "browser": {
+      "type": "edge",
+      "path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+      "cdp_port": 9222
+    }
+  }
+}

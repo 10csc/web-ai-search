@@ -1,0 +1,152 @@
+{
+  "platform": "chatgpt",
+  "version": 1,
+  "cot_patterns": [],
+  "marker_placement": "unknown",
+  "stable_threshold": 3,
+  "fallback_strategy": "post_last_marker",
+  "evolution_log": [
+    {
+      "time": "2026-06-07T18:44:59.229636+08:00",
+      "action": "adapt_interval",
+      "detail": "轮询间隔: 2.0s → 5.0s (增速24.2cps)",
+      "version_after": 1
+    },
+    {
+      "time": "2026-06-07T18:57:19.224430+08:00",
+      "action": "adapt_interval",
+      "detail": "轮询间隔: 5.0s → 3.0s (增速57.5cps)",
+      "version_after": 1
+    }
+  ],
+  "created_at": "2026-06-06T21:07:55.139759+08:00",
+  "polling": {
+    "interval_sec": 3.0,
+    "max_wait_sec": 180,
+    "growth_rate_cps": 57.5,
+    "stability_rounds": 2,
+    "samples": [
+      {
+        "time": "2026-06-06T21:08:20.843251+08:00",
+        "elapsed_sec": 25,
+        "content_len": 393112
+      },
+      {
+        "time": "2026-06-06T21:08:22.940285+08:00",
+        "elapsed_sec": 27,
+        "content_len": 393363
+      },
+      {
+        "time": "2026-06-06T21:08:25.525947+08:00",
+        "elapsed_sec": 30,
+        "content_len": 393707
+      },
+      {
+        "time": "2026-06-06T21:08:27.696920+08:00",
+        "elapsed_sec": 32,
+        "content_len": 393905
+      },
+      {
+        "time": "2026-06-06T21:08:30.119667+08:00",
+        "elapsed_sec": 34,
+        "content_len": 394182
+      },
+      {
+        "time": "2026-06-06T21:08:32.740433+08:00",
+        "elapsed_sec": 37,
+        "content_len": 394481
+      },
+      {
+        "time": "2026-06-06T21:08:34.789954+08:00",
+        "elapsed_sec": 39,
+        "content_len": 4353
+      },
+      {
+        "time": "2026-06-06T21:08:36.837175+08:00",
+        "elapsed_sec": 41,
+        "content_len": 4353
+      },
+      {
+        "time": "2026-06-06T21:08:38.878471+08:00",
+        "elapsed_sec": 43,
+        "content_len": 4353
+      },
+      {
+        "time": "2026-06-07T18:44:55.156284+08:00",
+        "elapsed_sec": 2,
+        "content_len": 390257
+      },
+      {
+        "time": "2026-06-07T18:44:57.193179+08:00",
+        "elapsed_sec": 4,
+        "content_len": 390257
+      },
+      {
+        "time": "2026-06-07T18:44:59.228629+08:00",
+        "elapsed_sec": 6,
+        "content_len": 390257
+      },
+      {
+        "time": "2026-06-07T18:48:22.655470+08:00",
+        "elapsed_sec": 5,
+        "content_len": 390257
+      },
+      {
+        "time": "2026-06-07T18:48:27.690719+08:00",
+        "elapsed_sec": 10,
+        "content_len": 390257
+      },
+      {
+        "time": "2026-06-07T18:48:32.731210+08:00",
+        "elapsed_sec": 15,
+        "content_len": 390257
+      },
+      {
+        "time": "2026-06-07T18:51:57.216828+08:00",
+        "elapsed_sec": 5,
+        "content_len": 390257
+      },
+      {
+        "time": "2026-06-07T18:52:02.266480+08:00",
+        "elapsed_sec": 10,
+        "content_len": 390257
+      },
+      {
+        "time": "2026-06-07T18:52:07.308373+08:00",
+        "elapsed_sec": 15,
+        "content_len": 390257
+      },
+      {
+        "time": "2026-06-07T18:56:53.802688+08:00",
+        "elapsed_sec": 5,
+        "content_len": 390383
+      },
+      {
+        "time": "2026-06-07T18:56:58.841985+08:00",
+        "elapsed_sec": 10,
+        "content_len": 390620
+      },
+      {
+        "time": "2026-06-07T18:57:03.881849+08:00",
+        "elapsed_sec": 15,
+        "content_len": 391171
+      },
+      {
+        "time": "2026-06-07T18:57:09.152528+08:00",
+        "elapsed_sec": 20,
+        "content_len": 1313
+      },
+      {
+        "time": "2026-06-07T18:57:14.186831+08:00",
+        "elapsed_sec": 25,
+        "content_len": 1313
+      },
+      {
+        "time": "2026-06-07T18:57:19.223430+08:00",
+        "elapsed_sec": 30,
+        "content_len": 1313
+      }
+    ]
+  },
+  "updated_at": "2026-06-07T18:57:19.224430+08:00"
+}
