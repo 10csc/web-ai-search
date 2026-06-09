@@ -261,84 +261,72 @@ def run_auto(prompt, topic, url, force_regenerate=False, max_wait=300):
         project = get_or_create_project()
         target_url = get_session_url(project=project, platform=platform)
         page = ensure_page(browser, target_url)
-        from extractor import extract_with_diagnosis, is_content_complete
+        from extractor import dom_extract, is_content_complete
+        from evolution import load_or_create_polling
+        polling_p = load_or_create_polling(platform)
+        no_closing_stable = 0
+        closing_threshold = polling_p.get_no_closing_threshold()
+        closing_marker = f"[搜索主题：{topic}]"
         deadline = time.time() + max_wait
         last_len = 0; stable_count = 0; start_ts = time.time()
-        evolution_triggered = False
 
         while time.time() < deadline:
             time.sleep(interval)
-            raw = safe_page_text(page)
-            if not raw: continue
-            marker_check = f"[搜索主题：{topic}]"
-            marker_count = raw.count(marker_check)
             elapsed = int(time.time() - start_ts)
 
-            # 记录轮询采样（用于自适应调整）
-            content_tmp, _ = extract_with_diagnosis(raw, prompt, topic, platform)
-            if content_tmp:
-                polling.record_sample(elapsed, len(content_tmp))
-
-            content, diagnosis = extract_with_diagnosis(raw, prompt, topic, platform)
+            # 主导：DOM 直接提取最后一个 AI 回复（避免标记污染）
+            content = dom_extract(page, platform)
 
             if content and is_content_complete(content, platform=platform):
-                print(f"[轮询] {elapsed}s | 页面={len(raw)}字符 | 标记={marker_count} | "
-                      f"内容={len(content)}字符 稳定{stable_count}/{stability_rounds}")
+                tail = content.strip()[-300:]
+                has_closing = closing_marker in tail
+                polling.record_sample(elapsed, len(content))
 
-                if len(content) == last_len:
-                    stable_count += 1
-                    if stable_count >= stability_rounds:
-                        print(f"[自动] 稳定 ({len(content)}字符, {elapsed}s)")
-                        # 自适应调整策略
+                if has_closing:
+                    no_closing_stable = 0
+                    print(f"[轮询] {elapsed}s | DOM={len(content)}字符 | "
+                          f"结尾标记✓ 稳定{stable_count}/{stability_rounds}")
+                    if len(content) == last_len:
+                        stable_count += 1
+                        if stable_count >= stability_rounds:
+                            print(f"[自动] 稳定 ({len(content)}字符, {elapsed}s)")
+                            polling.adapt_interval()
+                            polling.update_closing_marker_reliability(True)
+                            log_entry(get_project_name(), "output", content[:50000])
+                            data_dir = os.path.join(os.path.dirname(SCRIPT_DIR), "data")
+                            os.makedirs(data_dir, exist_ok=True)
+                            with open(os.path.join(data_dir, "latest_result.md"), "w", encoding="utf-8") as f:
+                                f.write(content)
+                            return content
+                    else:
+                        stable_count = 0
+                    last_len = len(content)
+                else:
+                    stable_count = 0
+                    if len(content) == last_len and len(content) > 500:
+                        no_closing_stable += 1
+                    else:
+                        no_closing_stable = 0
+                    last_len = len(content)
+                    if elapsed % 15 == 0:
+                        print(f"[轮询] {elapsed}s | DOM={len(content)}字符 | "
+                              f"等待结尾标记...(稳定{no_closing_stable}轮)")
+                    # 无标记但内容长期稳定：AI 已完成
+                    if no_closing_stable >= closing_threshold:
                         polling.adapt_interval()
+                        polling.update_closing_marker_reliability(False)
+                        print(f"[自动] 无结尾标记但稳定 ({len(content)}字符, {elapsed}s)")
                         log_entry(get_project_name(), "output", content[:50000])
                         data_dir = os.path.join(os.path.dirname(SCRIPT_DIR), "data")
                         os.makedirs(data_dir, exist_ok=True)
                         with open(os.path.join(data_dir, "latest_result.md"), "w", encoding="utf-8") as f:
                             f.write(content)
                         return content
-                else:
-                    stable_count = 0
-                last_len = len(content)
 
-            else:
-                stable_count = 0
-                last_len = 0
-
-                if diagnosis:
-                    diag_type = diagnosis.get("failure_type", "unknown")
-                    if marker_count >= 2:
-                        print(f"[轮询] {elapsed}s | 页面={len(raw)}字符 | 标记={marker_count} | "
-                              f"提取失败({diag_type})")
-                    else:
-                        print(f"[轮询] {elapsed}s | 页面={len(raw)}字符 | 标记={marker_count} | "
-                              f"等待更多标记...")
-
-                    # 触发自进化：标记足够 + 已等待足够 + 诊断可适配 + 只触发一次
-                    if (marker_count >= 2 and len(raw) > 2000 and elapsed > 30
-                            and diagnosis.get("adaptable") and not evolution_triggered):
-                        evolution_triggered = True
-                        print(f"[进化] 触发自进化 ({diag_type})")
-                        evo_content, evo_summary = _extract_with_evolution(
-                            page, prompt, topic, platform, polling)
-                        if evo_content:
-                            polling.adapt_interval()
-                            log_entry(get_project_name(), "output", evo_content[:50000])
-                            data_dir = os.path.join(os.path.dirname(SCRIPT_DIR), "data")
-                            os.makedirs(data_dir, exist_ok=True)
-                            with open(os.path.join(data_dir, "latest_result.md"), "w", encoding="utf-8") as f:
-                                f.write(evo_content)
-                            if evo_summary:
-                                print(f"[进化] 成功 (进化{evo_summary['rounds']}轮, "
-                                      f"变更: {evo_summary['changes']})")
-                            return evo_content
-                else:
-                    if marker_count >= 2:
-                        print(f"[轮询] {elapsed}s | 页面={len(raw)}字符 | 标记={marker_count} | "
-                              f"提取失败(无诊断)")
-
-                # 内容充裕兜底：标记>=2、页面>2000字符、已等待>60秒
-                if marker_count >= 2 and len(raw) > 2000 and elapsed > 60:
+            # DOM 提取失败 → 兜底：标记对定位 + 强制提取
+            if not content and elapsed > 60:
+                raw = safe_page_text(page)
+                if raw:
                     marker = f"[搜索主题：{topic}]"
                     positions = []
                     idx = 0
@@ -349,7 +337,6 @@ def run_auto(prompt, topic, url, force_regenerate=False, max_wait=300):
                         positions.append(idx)
                         idx += len(marker)
                     if len(positions) >= 2:
-                        # 优先 post-marker，再 between-markers
                         forced = raw[positions[-1] + len(marker):].strip()
                         if len(forced) < 300:
                             forced = raw[positions[-2] + len(marker):positions[-1]].strip()
@@ -368,8 +355,18 @@ def run_auto(prompt, topic, url, force_regenerate=False, max_wait=300):
                                 f.write(forced)
                             return forced
 
-        raw = safe_page_text(page)
-        content, _ = extract_with_diagnosis(raw, prompt, topic, platform)
+            # 有 DOM 内容但一直不稳定：最终阶段也收下
+            if content and len(content) > 300 and elapsed > max_wait * 0.8:
+                print(f"[自动] 接近超时兜底 ({len(content)}字符, {elapsed}s)")
+                log_entry(get_project_name(), "output", content[:50000])
+                data_dir = os.path.join(os.path.dirname(SCRIPT_DIR), "data")
+                os.makedirs(data_dir, exist_ok=True)
+                with open(os.path.join(data_dir, "latest_result.md"), "w", encoding="utf-8") as f:
+                    f.write(content)
+                return content
+
+        # 超时：最后一试
+        content = dom_extract(page, platform)
         if content and len(content) > 300:
             print(f"[自动] 超时兜底 ({len(content)}字符)")
             log_entry(get_project_name(), "output", content[:50000])

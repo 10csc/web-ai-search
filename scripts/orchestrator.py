@@ -351,9 +351,9 @@ def execute(plan_dict, progress_callback=None):
                     print(f"  ⛔ 连续 {send_failures} 次发送失败，请手动检查浏览器状态后重试")
         else:
             # === L3: 采集串行 + 整合汇总 ===
-            # 整合平台子问题以 "基于以上" 开头，其余为采集方向
-            collect_sqs = [s for s in sqs if not s["question"].startswith("基于以上")]
-            synth_sqs = [s for s in sqs if s["question"].startswith("基于以上")]
+            # 整合平台子问题以 "基于以上" 或 "基于" 开头，其余为采集方向
+            collect_sqs = [s for s in sqs if not (s["question"].startswith("基于以上") or s["question"].startswith("基于材料"))]
+            synth_sqs = [s for s in sqs if s["question"].startswith("基于以上") or s["question"].startswith("基于材料")]
 
             for i, sq in enumerate(collect_sqs):
                 print(f"\n[Send] L3 [{i+1}/{len(collect_sqs)}] {sp}: {sq['question'][:60]}")
@@ -395,11 +395,16 @@ def execute(plan_dict, progress_callback=None):
                 data_dir = os.path.join(os.path.dirname(SCRIPT_DIR), "data")
                 os.makedirs(data_dir, exist_ok=True)
                 mat_file = os.path.join(data_dir, "_materials.md")
+                # 先删旧文件，避免同名冲突导致自动改名
+                try: os.remove(mat_file)
+                except Exception: pass
                 with open(mat_file, "w", encoding="utf-8") as f:
                     f.write(materials)
                 print(f"  [素材] {len(materials)}字符 → {mat_file}")
                 if len(materials) < 100:
                     print(f"  [{kp}] ⚠ 素材文件内容不足（{len(materials)}字符），跳过整合")
+                    try: os.remove(mat_file)
+                    except Exception: pass
                     results.append({"question": sq["question"], "platform": kp,
                                     "content": None, "error": "素材不足", "gaps": [], "links": []})
                     synthesis_ok = False
@@ -474,7 +479,7 @@ def execute(plan_dict, progress_callback=None):
                             synthesis_ok = False
 
                 if synthesis_ok:
-                    # === 5. 保存会话 ===
+                    # === 5. 保存会话 + 清理材料文件 ===
                     time.sleep(0.5)
                     if page.url != session_url:
                         from common import _save_session
@@ -482,6 +487,9 @@ def execute(plan_dict, progress_callback=None):
                         print(f"  [{kp}] ✓ 已发送 (新会话)")
                     else:
                         print(f"  [{kp}] ✓ 已发送")
+                    # 材料已上传，立即删除避免下次写同名文件时冲突
+                    try: os.remove(mat_file)
+                    except Exception: pass
 
                     # === 6. 轮询提取 ===
                     print(f"  [等待] {kp} 整合中...")
@@ -498,6 +506,14 @@ def execute(plan_dict, progress_callback=None):
                     else:
                         results.append({"question": sq["question"], "platform": kp,
                                         "content": None, "error": "超时", "gaps": [], "links": []})
+
+    # 清理临时材料文件
+    try:
+        mat_file = os.path.join(os.path.dirname(SCRIPT_DIR), "data", "_materials.md")
+        if os.path.exists(mat_file):
+            os.remove(mat_file)
+    except Exception:
+        pass
 
     return {
         "results": results,
