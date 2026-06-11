@@ -7,7 +7,8 @@ if SCRIPT_DIR not in sys.path:
 
 
 from common import (DEFAULT_CDP_PORT, load_config, ensure_browser, ensure_page, detect_platform, get_or_create_project,
-                    safe_page_text, get_project_name, _save_session, get_session_url, submit_and_verify)
+                    safe_page_text, get_project_name, _save_session, get_session_url, submit_and_verify,
+                    save_result)
 from generator import script_exists, generate_interaction_script, get_platform_script_path, load_platform_module
 from logger import log_entry
 
@@ -136,108 +137,13 @@ def run_extract(prompt, topic, url):
             quality_ok, quality_report = _validate_extraction(content, marker_count)
             print(f"[提取] {'✓' if quality_ok else '⚠️'} {quality_report}")
             log_entry(get_project_name(), "output", content[:50000])
-            data_dir = os.path.join(os.path.dirname(SCRIPT_DIR), "data")
-            os.makedirs(data_dir, exist_ok=True)
-            with open(os.path.join(data_dir, "latest_result.md"), "w", encoding="utf-8") as f:
-                f.write(content)
+            save_result(content)
             print(f"[提取] 成功 ({len(content)} 字符)")
             return content
         return f"ERROR: 提取失败 (页面{len(raw)}字符, 标记{marker_count}个)"
 
 
-# ====== auto: send + detect + extract（v8: 自进化闭环）======
-
-def _extract_with_evolution(page, prompt, topic, platform, polling,
-                            max_evolution_rounds=2):
-    """提取 + 失败则进化重试。返回 (content, evolution_summary)。
-
-    进化循环：提取 → 诊断 → 适配 → 持久化 → 重试（最多 max_evolution_rounds 轮）
-    """
-    from extractor import extract_with_diagnosis, is_content_complete
-    from evolution import (FailureAnalyzer, ExtractionProfile,
-                           StrategyAdapter, load_or_create_profile)
-
-    profile = load_or_create_profile(platform)
-    raw = safe_page_text(page)
-    if not raw:
-        return None, None
-
-    content, diagnosis = extract_with_diagnosis(raw, prompt, topic, platform)
-
-    if content and is_content_complete(content, platform=platform):
-        return content, None
-
-    # === 进化循环 ===
-    evolution_summary = {"rounds": 0, "changes": [], "final_diagnosis": None}
-
-    for round_num in range(1, max_evolution_rounds + 1):
-        if not diagnosis or not diagnosis.get("adaptable"):
-            evolution_summary["final_diagnosis"] = diagnosis
-            break
-
-        print(f"[进化] 第{round_num}轮: {diagnosis.get('failure_type')} → 尝试适配...")
-
-        # 适配
-        result = StrategyAdapter.adapt(profile, diagnosis)
-        if result:
-            evolution_summary["rounds"] = round_num
-            evolution_summary["changes"].extend(result.get("changes", []))
-            print(f"[进化] 适配完成: {', '.join(result.get('changes', []))}")
-
-        # 重新提取（应用新策略）
-        import time as _time
-        _time.sleep(2)  # 短暂等待 AI 可能还在生成
-        raw2 = safe_page_text(page)
-        if not raw2:
-            evolution_summary["final_diagnosis"] = diagnosis
-            break
-
-        content2, diagnosis2 = extract_with_diagnosis(raw2, prompt, topic, platform)
-        if content2 and is_content_complete(content2, platform=platform):
-            print(f"[进化] 第{round_num}轮重试成功 ({len(content2)}字符)")
-            return content2, evolution_summary
-
-        # 若诊断相同（策略未解决问题），不再重试
-        if diagnosis2 and diagnosis2.get("failure_type") == diagnosis.get("failure_type"):
-            diagnosis = diagnosis2
-            continue
-
-        diagnosis = diagnosis2
-        evolution_summary["final_diagnosis"] = diagnosis
-
-    # 进化循环结束仍未成功 → 强制提取兜底
-    raw3 = safe_page_text(page)
-    if raw3:
-        marker = f"[搜索主题：{topic}]"
-        positions = []
-        idx = 0
-        while True:
-            idx = raw3.find(marker, idx)
-            if idx == -1:
-                break
-            positions.append(idx)
-            idx += len(marker)
-        if len(positions) >= 2:
-            # 策略1：取最后一个标记之后的内容（对应 after_thinking 模式）
-            forced = raw3[positions[-1] + len(marker):].strip()
-            if len(forced) > 300:
-                # 尾部清理：页尾文字 + JS 状态数据
-                from evolution import GlobalKnowledge
-                for footer_kw in GlobalKnowledge.get_footer_patterns():
-                    pos = forced.find(footer_kw)
-                    if pos > 0 and pos > len(forced) * 0.7:
-                        forced = forced[:pos].strip()
-                        break
-                print(f"[进化] 强制提取(post-marker) ({len(forced)}字符)")
-                return forced, evolution_summary
-            # 策略2：取最后一对标记之间的内容（兜底）
-            forced = raw3[positions[-2] + len(marker):positions[-1]].strip()
-            if len(forced) > 300:
-                print(f"[进化] 强制提取(between-markers) ({len(forced)}字符)")
-                return forced, evolution_summary
-
-    return None, evolution_summary
-
+# ====== auto: send + detect + extract ======
 
 def run_auto(prompt, topic, url, force_regenerate=False, max_wait=300):
     platform = detect_platform(url)
@@ -293,10 +199,7 @@ def run_auto(prompt, topic, url, force_regenerate=False, max_wait=300):
                             polling.adapt_interval()
                             polling.update_closing_marker_reliability(True)
                             log_entry(get_project_name(), "output", content[:50000])
-                            data_dir = os.path.join(os.path.dirname(SCRIPT_DIR), "data")
-                            os.makedirs(data_dir, exist_ok=True)
-                            with open(os.path.join(data_dir, "latest_result.md"), "w", encoding="utf-8") as f:
-                                f.write(content)
+                            save_result(content)
                             return content
                     else:
                         stable_count = 0
@@ -317,10 +220,7 @@ def run_auto(prompt, topic, url, force_regenerate=False, max_wait=300):
                         polling.update_closing_marker_reliability(False)
                         print(f"[自动] 无结尾标记但稳定 ({len(content)}字符, {elapsed}s)")
                         log_entry(get_project_name(), "output", content[:50000])
-                        data_dir = os.path.join(os.path.dirname(SCRIPT_DIR), "data")
-                        os.makedirs(data_dir, exist_ok=True)
-                        with open(os.path.join(data_dir, "latest_result.md"), "w", encoding="utf-8") as f:
-                            f.write(content)
+                        save_result(content)
                         return content
 
             # DOM 提取失败 → 兜底：标记对定位 + 强制提取
@@ -349,20 +249,14 @@ def run_auto(prompt, topic, url, force_regenerate=False, max_wait=300):
                                     break
                             print(f"[自动] 强制提取 ({len(forced)}字符, {elapsed}s)")
                             log_entry(get_project_name(), "output", forced[:50000])
-                            data_dir = os.path.join(os.path.dirname(SCRIPT_DIR), "data")
-                            os.makedirs(data_dir, exist_ok=True)
-                            with open(os.path.join(data_dir, "latest_result.md"), "w", encoding="utf-8") as f:
-                                f.write(forced)
+                            save_result(forced)
                             return forced
 
             # 有 DOM 内容但一直不稳定：最终阶段也收下
             if content and len(content) > 300 and elapsed > max_wait * 0.8:
                 print(f"[自动] 接近超时兜底 ({len(content)}字符, {elapsed}s)")
                 log_entry(get_project_name(), "output", content[:50000])
-                data_dir = os.path.join(os.path.dirname(SCRIPT_DIR), "data")
-                os.makedirs(data_dir, exist_ok=True)
-                with open(os.path.join(data_dir, "latest_result.md"), "w", encoding="utf-8") as f:
-                    f.write(content)
+                save_result(content)
                 return content
 
         # 超时：最后一试
@@ -370,10 +264,7 @@ def run_auto(prompt, topic, url, force_regenerate=False, max_wait=300):
         if content and len(content) > 300:
             print(f"[自动] 超时兜底 ({len(content)}字符)")
             log_entry(get_project_name(), "output", content[:50000])
-            data_dir = os.path.join(os.path.dirname(SCRIPT_DIR), "data")
-            os.makedirs(data_dir, exist_ok=True)
-            with open(os.path.join(data_dir, "latest_result.md"), "w", encoding="utf-8") as f:
-                f.write(content)
+            save_result(content)
             return content
         return "ERROR: 超时"
 

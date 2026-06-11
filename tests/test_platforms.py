@@ -10,7 +10,7 @@ import importlib.util
 import pytest
 
 # 所有已存在的平台
-PLATFORMS = ["deepseek", "kimi", "chatgpt", "gemini", "scnet"]
+PLATFORMS = ["deepseek", "kimi", "chatgpt", "gemini"]
 
 # 必需函数 + 参数个数
 REQUIRED_FUNCTIONS = {

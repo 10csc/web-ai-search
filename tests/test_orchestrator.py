@@ -82,9 +82,9 @@ class TestSEARCHAndSYNTHPlatforms:
     def test_search_platform(self):
         import orchestrator
         p = orchestrator._get_search_platform()
-        assert p in ("deepseek", "kimi", "chatgpt", "gemini", "scnet")
+        assert p in ("deepseek", "kimi", "chatgpt", "gemini")
 
     def test_synth_platform(self):
         import orchestrator
         p = orchestrator._get_synthesis_platform()
-        assert p in ("deepseek", "kimi", "chatgpt", "gemini", "scnet")
+        assert p in ("deepseek", "kimi", "chatgpt", "gemini")

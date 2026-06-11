@@ -94,6 +94,7 @@ def plan(user_query, depth="L2", project_context=None):
             "question": user_query,
             "platform": sp,
             "reason": f"L2 {sp} 单平台检索",
+            "stage": "search",
         })
     else:
         domains = _llm_decompose(user_query, depth) or \
@@ -104,6 +105,7 @@ def plan(user_query, depth="L2", project_context=None):
                 "question": d["question"],
                 "platform": sp,
                 "reason": f"L3 采集: {sp} 串行",
+                "stage": "search",
             })
 
         # 整合 prompt：不注入项目背景到搜索主题，而是在整合时单独传递
@@ -114,7 +116,8 @@ def plan(user_query, depth="L2", project_context=None):
         sub_questions.append({
             "question": synth_question,
             "platform": kp,
-            "reason": f"{kp} 整合+裁判",
+            "reason": f"{kp} 整合+验证",
+            "stage": "synthesis",
         })
 
     decomposed = len(sub_questions) > 2
@@ -130,6 +133,7 @@ def plan(user_query, depth="L2", project_context=None):
             "credibility_below": 6,
             "contradiction_detected": True,
             "max_replan_rounds": 3,
+            "max_research_rounds": 2,
         },
     }
 

@@ -20,9 +20,13 @@ def is_content_complete(text, platform=None):
 
 def _get_platform_sel(platform):
     """从平台脚本读取 EXTRACT_SEL，找不到用兜底选择器。"""
+    import importlib.util, os
     try:
-        from generator import load_platform_module
-        mod = load_platform_module(platform)
+        platforms_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "platforms")
+        spec = importlib.util.spec_from_file_location(
+            f"platform_{platform}", os.path.join(platforms_dir, f"{platform}.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
         return getattr(mod, "EXTRACT_SEL", 'div[class*="message"]')
     except Exception:
         pass

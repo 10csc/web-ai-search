@@ -36,8 +36,8 @@ class GlobalKnowledge:
       "version": 1,
       "cot_patterns": {                          # CoT 关键词 → 确认信息
         "深度思考": {
-          "first_seen": "scnet",
-          "confirmations": ["scnet", "deepseek"],  # 2+ 确认 → 全局生效
+          "first_seen": "deepseek",
+          "confirmations": ["deepseek"],  # 2+ 确认 → 全局生效
           "promoted_at": "2026-06-06T18:50:00+08:00"
         }
       },
@@ -50,9 +50,7 @@ class GlobalKnowledge:
         "deepseek-r1": "after_thinking"
       },
       "known_models": {                         # 平台 → 底层 AI 模型映射
-        "scnet": "deepseek-v4",
-        "deepseek": "deepseek-v4",
-        "scnet_think": "deepseek-r1"
+        "deepseek": "deepseek-v4"
       },
       "promotion_rules": {
         "min_confirmations": 2,                  # 至少 N 个平台确认才提升为全局
@@ -100,9 +98,8 @@ class GlobalKnowledge:
             ],
             "marker_placement_model": {},
             "known_models": {
-                "scnet": "deepseek-v4",
                 "deepseek": "deepseek-v4",
-                "scnet_think": "deepseek-r1",
+                "deepseek": "deepseek-v4",
             },
             "promotion_rules": {"min_confirmations": 2, "min_content_len": 300},
             "evolution_log": [],
@@ -719,17 +716,17 @@ if __name__ == "__main__":
     print("=== FailureAnalyzer ===")
     fake_raw = "页面内容..." * 100
     fake_cot = "深度思考我们被要求写一个关于Python的答复。需要根据搜索结果..." + "正文" * 50
-    diag = FailureAnalyzer.analyze(fake_raw, fake_cot, "scnet")
+    diag = FailureAnalyzer.analyze(fake_raw, fake_cot, "deepseek")
     print(f"CoT检测: {diag}")
 
     print("\n=== ExtractionProfile ===")
-    profile = ExtractionProfile("scnet")
+    profile = ExtractionProfile("deepseek")
     print(f"加载档案 v{profile.data['version']}, CoT关键词: {profile.get_cot_patterns()[:5]}...")
     profile.learn_cot_keyword("深度思考")
     print(f"进化后 v{profile.data['version']}")
 
     print("\n=== PollingProfile ===")
-    polling = PollingProfile("scnet")
+    polling = PollingProfile("deepseek")
     polling.record_sample(10, 3000)
     polling.record_sample(20, 5500)
     polling.record_sample(30, 8200)
@@ -738,8 +735,8 @@ if __name__ == "__main__":
     print(f"摘要: {polling.get_summary()}")
 
     print("\n=== StrategyAdapter ===")
-    profile2 = ExtractionProfile("scnet")
-    diag2 = FailureAnalyzer.analyze(fake_raw, fake_cot, "scnet")
+    profile2 = ExtractionProfile("deepseek")
+    diag2 = FailureAnalyzer.analyze(fake_raw, fake_cot, "deepseek")
     result = StrategyAdapter.adapt(profile2, diag2)
     print(f"适配结果: {result}")
     print(f"档案版本: {profile2.data['version']}")

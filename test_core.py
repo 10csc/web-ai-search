@@ -105,10 +105,6 @@ class TestDetectPlatform:
         import common
         assert common.detect_platform("https://gemini.google.com/app/xxx") == "gemini"
 
-    def test_scnet(self):
-        import common
-        assert common.detect_platform("https://scnet.cn/chat/") == "scnet"
-
     def test_unknown(self):
         import common
         assert common.detect_platform("https://www.baidu.com/") == "unknown"
@@ -153,9 +149,9 @@ class TestGetSessionUrl:
 
     def test_fixed_mode_fallback(self, temp_skill_dir):
         import common
-        url = common.get_session_url(project="myproject", platform="scnet")
+        url = common.get_session_url(project="myproject", platform="gemini")
         # fallback: f"https://chat.{platform}.com/"
-        assert "chat.scnet.com" in url
+        assert "chat.gemini.com" in url
 
     def test_fixed_mode_no_project(self, temp_skill_dir):
         import common

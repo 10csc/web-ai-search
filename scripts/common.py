@@ -214,7 +214,7 @@ def ensure_browser(p, cdp_port=None):
 def ensure_page(browser, url, new_tab=False):
     """在当前 context 中查找或创建目标 URL 的页面。
     new_tab=True 时始终创建新标签页，不干扰用户已有标签。
-    匹配策略：优先 URL 精确匹配 → 平台类型匹配（处理重定向）→ 新建。
+    匹配策略：优先 URL 精确匹配 → 平台类型匹配（仅限已注册AI平台）→ 新建。
     """
     target_platform = detect_platform(url)
     pages = browser.contexts[0].pages
@@ -223,11 +223,19 @@ def ensure_page(browser, url, new_tab=False):
         for page in pages:
             if page.url.startswith(url) or page.url == url:
                 return page
-        # 第二轮：平台匹配（处理重定向，如 kimi.moonshot.cn → scnet.cn）
-        for page in pages:
-            page_platform = detect_platform(page.url)
-            if page_platform == target_platform and page_platform != "unknown":
-                return page
+        # 第二轮：仅限已注册 AI 平台页面匹配（避免误匹配用户其他标签页）
+        if target_platform != "unknown":
+            registered_urls = config.get("platform_urls", {})
+            for page in pages:
+                page_platform = detect_platform(page.url)
+                if page_platform == target_platform and page_platform in registered_urls:
+                    # 定位到指定 URL（刷新会话）
+                    try:
+                        page.goto(url, timeout=15000, wait_until="domcontentloaded")
+                        time.sleep(2)
+                        return page
+                    except Exception:
+                        continue
     page = browser.contexts[0].new_page()
     page.goto(url, timeout=30000, wait_until="domcontentloaded")
     time.sleep(3)
@@ -358,3 +366,36 @@ def _save_session(project, url):
             json.dump(config, f, ensure_ascii=False, indent=2)
     except Exception as e:
         print(f"[警告] 保存会话链接失败: {e}")
+
+
+# ====== 结果持久化 ======
+
+def save_result(content):
+    """将搜索结果写入 data/latest_result.md。消除 6 处重复写入。"""
+    data_dir = os.path.join(SKILL_DIR, "data")
+    os.makedirs(data_dir, exist_ok=True)
+    with open(os.path.join(data_dir, "latest_result.md"), "w", encoding="utf-8") as f:
+        f.write(content)
+
+
+# ====== 平台交互共享 ======
+
+SEND_BUTTON_SELECTORS = [
+    "button[aria-label=发送]",
+    "button[aria-label=Send]",
+    "[aria-label=Send message]",
+    "button[data-testid=send-button]",
+]
+
+
+def dismiss_blockers_base(page):
+    """通用弹窗/对话框消除：dialog.accept + Escape。各平台可在差异处覆盖。"""
+    try:
+        page.on("dialog", lambda d: d.accept())
+    except Exception:
+        pass
+    try:
+        page.keyboard.press("Escape")
+        time.sleep(0.3)
+    except Exception:
+        pass
