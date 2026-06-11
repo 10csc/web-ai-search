@@ -94,6 +94,41 @@ def _synthesize_local(materials, user_query):
         return None
 
 
+def _is_valid_synthesis(content, max_chars=2000):
+    """LLM 判断合成内容是否有效（非拒绝/道歉/空话）。返回 (bool, str)。"""
+    import json as _json, ssl, urllib.request
+    try:
+        config = load_config()
+        api_url = config.get("deepseek_api", "https://api.deepseek.com/v1")
+        api_key = config.get("deepseek_key", "")
+        if not api_key:
+            return True, "无 API key，默认通过"
+
+        sample = content[:max_chars]
+        payload = _json.dumps({
+            "model": "deepseek-chat",
+            "messages": [
+                {"role": "system", "content": "你是一个内容质量检测器。只回复 YES 或 NO。"},
+                {"role": "user", "content": f"以下文本是否是一份有效的研究整合报告（包含分析、结论、验证标注）？如果文本主要是道歉、拒绝、高峰期提示、或只有搜索URL列表没有分析，回复 NO。\n\n{sample}"}
+            ],
+            "temperature": 0.0, "max_tokens": 2,
+        }, ensure_ascii=False).encode("utf-8")
+
+        req = urllib.request.Request(
+            f"{api_url}/chat/completions",
+            data=payload,
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+        )
+        ctx = ssl.create_default_context()
+        resp = urllib.request.urlopen(req, timeout=30, context=ctx)
+        body = _json.loads(resp.read().decode("utf-8"))
+        answer = body["choices"][0]["message"]["content"].strip().upper()
+        return answer.startswith("YES"), f"LLM判定: {answer}"
+    except Exception as e:
+        print(f"  [验证检测] LLM 调用失败，默认通过: {e}")
+        return True, f"检测异常，默认通过"
+
+
 def _evolve_upload(platform, page):
     """自进化：诊断页面文件上传能力，持久化到平台档案。"""
     from evolution import load_or_create_profile
@@ -595,14 +630,29 @@ def execute(plan_dict, progress_callback=None):
                     print(f"  [等待] {kp} 验证整合中...")
                     content = _wait_one(kp, page, prompt, topic, max_wait=300)
                     if content:
-                        gaps = detect_gaps(content)
-                        links = extract_links(content)
-                        all_links.extend(links)
-                        results.append({"question": sq["question"], "platform": kp,
-                            "content": content, "gaps": gaps, "links": links,
-                            "content_len": len(content)})
-                        log_entry(project, "output", f"[{kp}] {len(content)}字符")
-                        print(f"  [{kp}] ✓ {len(content)}字符")
+                        valid, reason = _is_valid_synthesis(content)
+                        if not valid:
+                            print(f"  [{kp}] LLM判定无效 ({reason}) → 降级本地 API 总结")
+                            local = _synthesize_local(materials, plan_dict.get("original_query", ""))
+                            if local:
+                                results.append({"question": sq["question"], "platform": f"{kp}(本地)",
+                                    "content": local, "gaps": [], "links": [],
+                                    "content_len": len(local)})
+                                log_entry(project, "output", f"[{kp}/本地] {len(local)}字符")
+                                print(f"  [{kp}/本地] ✓ {len(local)}字符")
+                            else:
+                                results.append({"question": sq["question"], "platform": kp,
+                                                "content": content, "error": "整合无效且本地总结失败",
+                                                "gaps": [], "links": []})
+                        else:
+                            gaps = detect_gaps(content)
+                            links = extract_links(content)
+                            all_links.extend(links)
+                            results.append({"question": sq["question"], "platform": kp,
+                                "content": content, "gaps": gaps, "links": links,
+                                "content_len": len(content)})
+                            log_entry(project, "output", f"[{kp}] {len(content)}字符")
+                            print(f"  [{kp}] ✓ {len(content)}字符")
                     else:
                         results.append({"question": sq["question"], "platform": kp,
                                         "content": None, "error": "超时", "gaps": [], "links": []})

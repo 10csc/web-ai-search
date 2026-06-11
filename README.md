@@ -71,6 +71,8 @@ L2 和 L3 搜索阶段都在**搜索平台**上进行（默认 DeepSeek），L3 
 {
   "session_mode": "fixed",
   "current_project": "my-app",
+  "deepseek_api": "https://api.deepseek.com/v1",
+  "deepseek_key": "sk-xxxxxxxxxxxxxxxx",
   "platform_urls": {
     "deepseek": "https://chat.deepseek.com/",
     "kimi": "https://www.kimi.com/"
@@ -85,8 +87,22 @@ L2 和 L3 搜索阶段都在**搜索平台**上进行（默认 DeepSeek），L3 
 
 - `session_mode`：`fixed`（推荐）或 `auto`
 - `current_project`：当前项目名，对应 `sessions` 中的 key
+- `deepseek_api`：LLM API 地址（默认 DeepSeek 官方）
+- `deepseek_key`：**强烈建议配置**。API key 用于三个关键能力（见下方）
 - `platform_urls`：各平台首页地址（兜底用）
 - `sessions`：每个项目在各平台的聊天链接（需要手动创建聊天后填入）
+
+### 为什么需要 API key
+
+Agent 的核心搜索能力通过浏览器操控 AI 平台完成（免费、零 API 消耗），但以下三个环节依赖 LLM API：
+
+| 能力 | 用途 | 没 key 的行为 |
+|------|------|-------------|
+| **Planner 分解** | L3 深度研究时将问题拆为互补分析方向 | 退化为单方向搜索 |
+| **合成验证** | 检测整合平台是否真正完成了报告（而非高峰期拒绝/道歉） | 默认放过，可能把拒绝消息当报告 |
+| **本地降级总结** | 整合平台不可用时，本地 API 完成素材汇总 | 跳过整合，只返回原始素材 |
+
+> 推荐用 DeepSeek API（`deepseek_api` + `deepseek_key`），价格低、中文能力强。即使没有 key，系统也能降级运行，但 L3 的验证和整合质量会打折扣。
 
 ## Agent 命令参考
 
