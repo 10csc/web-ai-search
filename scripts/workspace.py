@@ -9,14 +9,13 @@
 
 import os, json, time
 from datetime import datetime, timezone, timedelta
+from runtime_paths import WORKSPACE_DIR, MEMORY_DIR, SKILL_DIR as _SKILL_DIR
 
-SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CST = timezone(timedelta(hours=8))
 
-# === 路径 ===
-
-WORKSPACE_DIR = os.path.join(SKILL_DIR, "data", "workspace")
-MEMORY_DIR = os.path.join(SKILL_DIR, "data", "memory")
+# 向后兼容：旧代码/test 直接读写 SKILL_DIR / WORKSPACE_DIR / MEMORY_DIR
+SKILL_DIR = _SKILL_DIR
+SCRIPT_DIR = os.path.join(_SKILL_DIR, "scripts")
 
 
 def _ensure_dirs():

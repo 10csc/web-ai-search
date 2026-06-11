@@ -2,16 +2,15 @@
 import json
 import os
 from datetime import datetime, timezone, timedelta
+from runtime_paths import DATA_DIR
 
-SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CST = timezone(timedelta(hours=8))
 
 
 def log_entry(project_name: str, entry_type: str, content: str):
     """追加一条日志到 data/<project_name>.jsonl"""
-    data_dir = os.path.join(SKILL_DIR, "data")
-    os.makedirs(data_dir, exist_ok=True)
-    log_path = os.path.join(data_dir, f"{project_name}.jsonl")
+    os.makedirs(DATA_DIR, exist_ok=True)
+    log_path = os.path.join(DATA_DIR, f"{project_name}.jsonl")
 
     record = {
         "time": datetime.now(CST).isoformat(timespec="seconds"),
@@ -26,7 +25,7 @@ def log_entry(project_name: str, entry_type: str, content: str):
 
 def read_history(project_name: str, limit: int = 5) -> list[dict]:
     """读取最近 N 条日志"""
-    log_path = os.path.join(SKILL_DIR, "data", f"{project_name}.jsonl")
+    log_path = os.path.join(DATA_DIR, f"{project_name}.jsonl")
     if not os.path.exists(log_path):
         return []
     records = []

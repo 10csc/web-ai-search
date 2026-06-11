@@ -12,10 +12,10 @@
 
 import os, json, re, time
 from datetime import datetime, timezone, timedelta
+from runtime_paths import PROFILES_DIR
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
-PROFILES_DIR = os.path.join(SCRIPT_DIR, "profiles")
 GLOBAL_PROFILE_PATH = os.path.join(PROFILES_DIR, "_global.json")
 CST = timezone(timedelta(hours=8))
 

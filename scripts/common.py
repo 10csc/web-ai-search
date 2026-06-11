@@ -3,10 +3,16 @@
 import json
 import os
 import time
+from runtime_paths import (
+    CONFIG_PATH as RUNTIME_CONFIG_PATH,
+    DATA_DIR,
+    SKILL_DIR,
+    resolve_config_path,
+    ensure_runtime_dirs,
+)
 
-SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(SKILL_DIR, "config.json")
+CONFIG_PATH = resolve_config_path()
 
 CURRENT_VERSION = 6
 DEFAULT_CDP_PORT = 9223
@@ -18,9 +24,10 @@ DEFAULT_URL = "https://chat.deepseek.com/"
 
 def load_config():
     """读取 config.json，兼容 v4/v5/v6 所有版本"""
-    if not os.path.exists(CONFIG_PATH):
+    config_path = CONFIG_PATH
+    if not os.path.exists(config_path):
         return _default_config()
-    with open(CONFIG_PATH, "r", encoding="utf-8-sig") as f:
+    with open(config_path, "r", encoding="utf-8-sig") as f:
         config = json.load(f)
     config.setdefault("version", 0)
     config.setdefault("cdp_port", DEFAULT_CDP_PORT)
@@ -42,6 +49,13 @@ def _default_config():
         "local_env": {"initialized": False},
         "session_mode": "fixed", "sessions": {}, "current_project": "",
     }
+
+
+def save_config(config):
+    """Persist config to the runtime-owned config path."""
+    ensure_runtime_dirs()
+    with open(RUNTIME_CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(config, f, ensure_ascii=False, indent=2)
 
 
 def get_python_venv_path():
@@ -85,13 +99,9 @@ def get_or_create_project():
         return project
     # 首次使用：自动推断并保存
     project = _auto_project()
-    config_path = os.path.join(SKILL_DIR, "config.json")
-    if os.path.exists(config_path):
-        with open(config_path, "r", encoding="utf-8-sig") as f:
-            cfg = json.load(f)
-        cfg["current_project"] = project
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, ensure_ascii=False, indent=2)
+    cfg = load_config()
+    cfg["current_project"] = project
+    save_config(cfg)
     return project
 
 
@@ -151,7 +161,10 @@ def _resolve_browser_path():
 
 
 def _kill_browser():
-    """杀掉所有 Edge 进程，释放 Profile 文件锁。"""
+    """杀掉所有 Edge 进程，释放 Profile 文件锁。
+
+    这是显式维护动作，正常搜索流程不应调用。
+    """
     import subprocess
     for name in ("msedge.exe", "msedgewebview2.exe"):
         try:
@@ -165,14 +178,18 @@ def _kill_browser():
     time.sleep(1.5)
 
 
-def _launch_browser(port=None):
-    """启动 Edge 并返回 CDP 端口。先杀残留再启动，保证 Profile 锁释放。"""
+def _launch_browser(port=None, kill_existing=False):
+    """启动浏览器并返回 CDP 端口。
+
+    默认不杀已有浏览器。只有调用方明确传入 kill_existing=True 时才释放 Profile 锁。
+    """
     browser_path = _resolve_browser_path()
     if not browser_path:
         return None
     import subprocess
     use_port = port or DEFAULT_CDP_PORT
-    _kill_browser()
+    if kill_existing:
+        _kill_browser()
     print("[*] 启动浏览器 (CDP: {})...".format(use_port))
     subprocess.Popen(
         [browser_path, "--remote-debugging-port={}".format(use_port)],
@@ -184,14 +201,27 @@ def _launch_browser(port=None):
         if found:
             return found
     return None
-def ensure_browser(p, cdp_port=None):
-    """连接 CDP 浏览器。优先复用已有 CDP 连接，不可用则自动启动 Edge。
+
+
+def ensure_browser(p, cdp_port=None, launch_policy="manual", kill_existing=False):
+    """连接 CDP 浏览器。
+
+    launch_policy:
+      - "manual": 默认。只连接已有 CDP，不启动/不杀浏览器。
+      - "auto": 未检测到 CDP 时尝试启动浏览器。
     返回 (browser, page)。
     """
     port = find_cdp_port(preferred=cdp_port)
     if not port:
-        print("[*] 未检测到 CDP 浏览器，自动启动...")
-        port = _launch_browser(cdp_port or DEFAULT_CDP_PORT)
+        if launch_policy != "auto":
+            name = os.path.basename(_resolve_browser_path() or "msedge.exe")
+            raise RuntimeError(
+                "未检测到 CDP 浏览器。请手动执行：\n"
+                "  {0} --remote-debugging-port={1}".format(
+                    name, cdp_port or DEFAULT_CDP_PORT)
+            )
+        print("[*] 未检测到 CDP 浏览器，按显式策略启动...")
+        port = _launch_browser(cdp_port or DEFAULT_CDP_PORT, kill_existing=kill_existing)
         if not port:
             name = os.path.basename(_resolve_browser_path() or "msedge.exe")
             raise RuntimeError(
@@ -211,11 +241,14 @@ def ensure_browser(p, cdp_port=None):
     if not contexts or not contexts[0].pages:
         raise RuntimeError("无可用的浏览器标签页，请打开至少一个标签页后重试")
     return browser, contexts[0].pages[-1]
+
+
 def ensure_page(browser, url, new_tab=False):
     """在当前 context 中查找或创建目标 URL 的页面。
     new_tab=True 时始终创建新标签页，不干扰用户已有标签。
     匹配策略：优先 URL 精确匹配 → 平台类型匹配（仅限已注册AI平台）→ 新建。
     """
+    config = load_config()
     target_platform = detect_platform(url)
     pages = browser.contexts[0].pages
     if not new_tab:
@@ -345,10 +378,8 @@ def _save_session(project, url):
     """保存平台链接到 config.json（两级映射）。
     失败时打印警告但不中断主流程。
     """
-    config_path = os.path.join(SKILL_DIR, "config.json")
     try:
-        with open(config_path, "r", encoding="utf-8-sig") as f:
-            config = json.load(f)
+        config = load_config()
     except Exception as e:
         print(f"[警告] 读取 config.json 失败: {e}")
         return
@@ -362,8 +393,7 @@ def _save_session(project, url):
         sessions[project] = proj_sessions
     proj_sessions[platform] = url
     try:
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, ensure_ascii=False, indent=2)
+        save_config(config)
     except Exception as e:
         print(f"[警告] 保存会话链接失败: {e}")
 
@@ -372,9 +402,8 @@ def _save_session(project, url):
 
 def save_result(content):
     """将搜索结果写入 data/latest_result.md。消除 6 处重复写入。"""
-    data_dir = os.path.join(SKILL_DIR, "data")
-    os.makedirs(data_dir, exist_ok=True)
-    with open(os.path.join(data_dir, "latest_result.md"), "w", encoding="utf-8") as f:
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(os.path.join(DATA_DIR, "latest_result.md"), "w", encoding="utf-8") as f:
         f.write(content)
 
 

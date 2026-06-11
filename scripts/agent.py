@@ -24,6 +24,8 @@ from orchestrator import execute as exec_plan, execute_simple
 from synthesizer import synthesize, generate_report, cross_validate
 from workspace import WorkspaceState, record_episode
 from common import load_config, get_or_create_project
+from diagnostics import diagnose, format_diagnosis
+from runtime_paths import DATA_DIR
 
 
 def agent_search(user_query, depth="L2", project_context=None, force_platform=None, quick=False, output_dir=None):
@@ -94,28 +96,35 @@ def agent_search(user_query, depth="L2", project_context=None, force_platform=No
     workspace.set_plan(plan_dict)
 
     # Step 2: 执行
-    if quick:
-        # 快速模式：单问题单平台
-        platform = force_platform or plan_dict["sub_questions"][0]["platform"]
-        content = execute_simple(user_query, platform, actual_depth)
-        results = [{"question": user_query, "platform": platform, "content": content, "gaps": [], "links": [], "content_len": len(content) if content else 0}]
-        execution = {"results": results, "gaps_total": 0, "all_links": []}
-    else:
-        execution = exec_plan(plan_dict)
-        for r in execution.get("results", []):
-            workspace.add_result(
-                r.get("platform", "?"),
-                r.get("question", "")[:100],
-                r.get("content_len", 0),
-                len(r.get("gaps", [])),
-                len(r.get("links", [])),
-            )
+    try:
+        if quick:
+            platform = force_platform or plan_dict["sub_questions"][0]["platform"]
+            content = execute_simple(user_query, platform, actual_depth)
+            results = [{"question": user_query, "platform": platform, "content": content, "gaps": [], "links": [], "content_len": len(content) if content else 0}]
+            execution = {"results": results, "gaps_total": 0, "all_links": []}
+        else:
+            execution = exec_plan(plan_dict)
+            for r in execution.get("results", []):
+                workspace.add_result(
+                    r.get("platform", "?"),
+                    r.get("question", "")[:100],
+                    r.get("content_len", 0),
+                    len(r.get("gaps", [])),
+                    len(r.get("links", [])),
+                )
+    except Exception as e:
+        print(f"\n[Agent] 执行失败: {e}")
+        # 自动诊断
+        search_platform = plan_dict["sub_questions"][0].get("platform", "deepseek") if plan_dict.get("sub_questions") else "deepseek"
+        diag = diagnose("send_failed", context={"platform": search_platform})
+        print(format_diagnosis(diag))
+        raise
 
     # Step 3: 整合
     report, validation = synthesize(user_query, execution)
 
     # 输出报告
-    data_dir = output_dir or os.path.join(os.path.dirname(SCRIPT_DIR), "data")
+    data_dir = output_dir or DATA_DIR
     os.makedirs(data_dir, exist_ok=True)
     report_path = os.path.join(data_dir, "latest_result.md")
     with open(report_path, "w", encoding="utf-8") as f:
@@ -174,7 +183,12 @@ if __name__ == "__main__":
         print("用法: python agent.py '搜索问题' [--depth L2] [--platform deepseek] [--quick]")
         _sys.exit(1)
 
-    result = agent_search(query, args.depth, args.platform, args.quick)
+    result = agent_search(
+        query,
+        depth=args.depth,
+        force_platform=args.platform,
+        quick=args.quick,
+    )
     print(f"\n{'='*50}")
     print(f"工具: {result['tool_choice']['tool']} | 深度: {result['plan']['depth'] if result['plan'] else 'L1'} | 耗时: {result.get('elapsed_sec', '?')}s")
     if result.get("report_path"):

@@ -14,11 +14,12 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
+from runtime_paths import resolve_config_path
 
 
 def _check_config(_ctx=None):
     """检查 config.json 是否存在且格式正确。"""
-    config_path = os.path.join(SKILL_DIR, "config.json")
+    config_path = resolve_config_path()
     if not os.path.exists(config_path):
         return False, "config.json 不存在", "运行 setup.py 初始化配置"
     try:

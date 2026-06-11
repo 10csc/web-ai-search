@@ -2,8 +2,8 @@
 """LLM 代码生成器：分析页面 DOM → 生成平台交互脚本 → 缓存"""
 import json, os, time, hashlib, importlib.util
 from common import SCRIPTS_DIR, load_config
+from runtime_paths import PROFILES_DIR
 
-PROFILES_DIR = os.path.join(SCRIPTS_DIR, "profiles")
 PLATFORMS_DIR = os.path.join(SCRIPTS_DIR, "platforms")
 
 
